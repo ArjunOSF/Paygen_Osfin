@@ -1,0 +1,137 @@
+1IP727010-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+                                                CLEARING CYCLE 001 - ACKNOWLEDGEMENT                              PAGE NO:         1 
+                                                              2026-04-22                                                             
+ MEMBER ID: 00000021577                                                                                                              
+                                                     NO DATA TO REPORT                                                               
+1IP727020-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+ ACCEPTANCE BRAND: MCC                          CLEARING CYCLE 001 - NOTIFICATION                                  PAGE NO:         1
+ BUSINESS SERVICE LEVEL: INTRACOUNTRY                         2026-04-22                                                             
+ BUSINESS SERVICE ID: 356001                                                                                                         
+ FILE ID: 001/260422/00000021577/01101                                                                                                                 
+ MEMBER ID: 00000021577                                                                                                              
+                                                                                                                                     
+ MASTERCARD SETTLED                                                    RECON                         FEE                                        
+                                                                         CURR                         CURR                              
+ TRANS. FUNC. PROC.CODE       IRD   COUNTS               RECON AMOUNT    CODE       TRANS FEE         CODE                           
+ ------------ --------------- --- -------- -------------------------- ------- ----------------------- -------                        
+ FIRST PRES.  PURCHASE   ORIG PE         4               11,170.40 DR 356-INR               146.32 CR 356-INR                        
+              PURCHASE   ORIG PF         2                2,792.60 DR 356-INR                36.59 CR 356-INR                        
+ ------------ --------------- --- -------- -------------------------- ------- ----------------------- -------                        
+ FIRST PRES.  TOTAL                        6                13,963.00 DR 356-INR                182.91 CR 356-INR                    
+                                                                                                                                     
+ INTRACOUNTRY                                                                                                                        
+ MASTERCARD SETTLED                                                                                                                  
+ BUSINESS SERVICE ID SUBTOTAL                  6                13,963.00 DR 356-INR                182.91 CR 356-INR                
+1IP727020-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+                                                CLEARING CYCLE 001 - NOTIFICATION                                  PAGE NO:         1
+                                                              2026-04-22                                                             
+                                                                                                                                     
+ ACCEPTANCE BRAND : MCC                                                                                                              
+ BUSINESS SERVICE LEVEL :INTRACOUNTRY                                                                                                
+ MEMBER ID: 00000021577                                                                                                              
+ CURRENCY CODE : 356-INR                                                                                                             
+                                                                                                                                     
+ BUSINESS                                                                                                                            
+ SERVICE                           ORIG/                                                                                             
+     ID            FILE ID                     RVSL          RECON. AMOUNT                   TRANSACTION FEE                         
+ -------- ---------------------------- ----    -------------------              -------------------                                  
+ 356001   001/260422/00000021577/01101 ORIG                       15,646.80 DR                                 204.97 CR               
+                                                                                                                                     
+                           GRAND TOTAL                          15,646.80 DR                                 204.97 CR               
+                                                                                                                                     
+1IP728010-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+ ACCEPTANCE BRAND: MCC                                    CLEARING CYCLE 001                                           RUN TIME: 18.35.23
+ BUSINESS SERVICE LEVEL: INTRACOUNTRY                         2026-04-22                                    PAGE NO:         1       
+ MEMBER ID: 00000021577                                                                                                              
+ CURRENCY CODE :  356 - INR                                                                                                          
+                                                                                                                                     
+ BUSINESS                                                         RECON.                                                             
+ SERVICE               FILE ID                       FILE ID                       NET RECON            CURR.                        
+    ID              TO MASTERCARD               FROM MASTERCARD                 CURRENCY AMOUNT       CODE                           
+ ________   ____________________________   ____________________________   _______________________   _______                          
+  356001                                001/260422/00000021577/01101                     15,646.80 DR   356-INR                      
+                                                                                                                                     
+  TOTAL                                                         15,646.80 DR   356-INR                                               
+                                                                                                                                     
+1IP727010-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+                                                CLEARING CYCLE 002 - ACKNOWLEDGEMENT                              PAGE NO:         1 
+                                                              2026-04-22                                                             
+ MEMBER ID: 00000021577                                                                                                              
+                                                     NO DATA TO REPORT                                                               
+1IP727020-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+ ACCEPTANCE BRAND: MCC                          CLEARING CYCLE 002 - NOTIFICATION                                  PAGE NO:         1
+ BUSINESS SERVICE LEVEL: INTRACOUNTRY                         2026-04-22                                                             
+ BUSINESS SERVICE ID: 356001                                                                                                         
+ FILE ID: 001/260422/00000021577/02201                                                                                                                 
+ MEMBER ID: 00000021577                                                                                                              
+                                                                                                                                     
+ MASTERCARD SETTLED                                                    RECON                         FEE                                        
+                                                                         CURR                         CURR                              
+ TRANS. FUNC. PROC.CODE       IRD   COUNTS               RECON AMOUNT    CODE       TRANS FEE         CODE                           
+ ------------ --------------- --- -------- -------------------------- ------- ----------------------- -------                        
+ FIRST PRES.  PURCHASE   ORIG PE         3                9,692.00 DR 356-INR               126.96 CR 356-INR                        
+              PURCHASE   ORIG PF         1                2,423.00 DR 356-INR                31.74 CR 356-INR                        
+ ------------ --------------- --- -------- -------------------------- ------- ----------------------- -------                        
+ FIRST PRES.  TOTAL                        4                12,115.00 DR 356-INR                158.70 CR 356-INR                    
+                                                                                                                                     
+ INTRACOUNTRY                                                                                                                        
+ MASTERCARD SETTLED                                                                                                                  
+ BUSINESS SERVICE ID SUBTOTAL                  4                12,115.00 DR 356-INR                158.70 CR 356-INR                
+1IP727020-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+                                                CLEARING CYCLE 002 - NOTIFICATION                                  PAGE NO:         1
+                                                              2026-04-22                                                             
+                                                                                                                                     
+ ACCEPTANCE BRAND : MCC                                                                                                              
+ BUSINESS SERVICE LEVEL :INTRACOUNTRY                                                                                                
+ MEMBER ID: 00000021577                                                                                                              
+ CURRENCY CODE : 356-INR                                                                                                             
+                                                                                                                                     
+ BUSINESS                                                                                                                            
+ SERVICE                           ORIG/                                                                                             
+     ID            FILE ID                     RVSL          RECON. AMOUNT                   TRANSACTION FEE                         
+ -------- ---------------------------- ----    -------------------              -------------------                                  
+ 356001   001/260422/00000021577/02201 ORIG                       10,431.20 DR                                 136.64 CR               
+                                                                                                                                     
+                           GRAND TOTAL                          10,431.20 DR                                 136.64 CR               
+                                                                                                                                     
+1IP728010-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+ ACCEPTANCE BRAND: MCC                                    CLEARING CYCLE 002                                           RUN TIME: 18.35.23
+ BUSINESS SERVICE LEVEL: INTRACOUNTRY                         2026-04-22                                    PAGE NO:         1       
+ MEMBER ID: 00000021577                                                                                                              
+ CURRENCY CODE :  356 - INR                                                                                                          
+                                                                                                                                     
+ BUSINESS                                                         RECON.                                                             
+ SERVICE               FILE ID                       FILE ID                       NET RECON            CURR.                        
+    ID              TO MASTERCARD               FROM MASTERCARD                 CURRENCY AMOUNT       CODE                           
+ ________   ____________________________   ____________________________   _______________________   _______                          
+  356001                                001/260422/00000021577/02201                     10,431.20 DR   356-INR                      
+                                                                                                                                     
+  TOTAL                                                         10,431.20 DR   356-INR                                               
+                                                                                                                                     
+1IP728010-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+ ACCEPTANCE BRAND: MCC                                    CLEARING CYCLE    SUMMARY                                       RUN TIME: 18.35.23
+ BUSINESS SERVICE LEVEL: INTRACOUNTRY                         2026-04-22                                    PAGE NO:         2       
+ MEMBER ID: 00000021577                                                                                                              
+ CURRENCY CODE :  356 - INR                                                                                                          
+                                                                                                                                     
+                                                            RECON.                                                                   
+  CYCLE             FILE ID                       FILE ID                       NET RECON            CURR.                           
+ ACTIVITY           TO MASTERCARD               FROM MASTERCARD                 CURRENCY AMOUNT       CODE                           
+ ________   ____________________________   ____________________________   _______________________   _______                          
+  CYCLE 01                            001/260422/00000021577/01101                     15,646.80 DR   356-INR                        
+  CYCLE 02                            001/260422/00000021577/02201                     10,431.20 DR   356-INR                        
+                                                                                                                                     
+  TOTAL                                                         26,078.00 DR   356-INR                                               
+                                                                                                                                     
+1IP728010-AA                                           MASTERCARD WORLDWIDE                                       RUN DATE: 04/22/26 
+                                                          CLEARING DAY TOTAL                           RUN TIME: 18.35.23            
+ MEMBER ID: 00000021577                                          2026-04-22                                    PAGE NO:         3    
+                                                                                                                                     
+ CLEARING DAY TOTAL AS OF CLEARING CYCLE  2                                                                                          
+                                                                                                                                     
+              RECONCILIATION          NET RECONCILIATION                                                                                        
+              CURRENCY  CODE           CURRENCY AMOUNT                                                                                        
+              --------------          ------------------                                                                                        
+                356-INR                        26,078.00 DR                                                                          
+                                                              ***END OF REPORT***                                                    
+

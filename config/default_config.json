@@ -1,0 +1,18 @@
+{
+  "bank_code": "1",
+  "branch_code": "00001",
+  "member_id": "021577",
+  "acquiring_ica": "008653",
+  "processor_id_10": "2123900000",
+  "acq_inst_id": "00000001234",
+  "rcv_inst_id": "00000005678",
+  "branch_id": "0001",
+  "region_id": "0001",
+  "rupay_member_id": "123456",
+  "amount_range": [100000, 500000],
+  "terminal_id_prefix": "S5NL",
+  "num_terminals": 6,
+  "tran_code": "020045",
+  "atm_mcc": "6011",
+  "pos_mcc": "5999"
+}
