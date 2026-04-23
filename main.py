@@ -626,33 +626,29 @@ def _validate(out_dir: str, file_set, transactions) -> None:
             else:
                 print(f"  [OK]   {label}.STAN ↔ ATM_C.SEQ_NO join: {len(nfs_stans)} records match")
 
-    # (fname, expected_len, label, skip_line_len_or_None)
-    for fname, expected_len, label, skip_len in [
-        ("tlf.txt",    574,  "TLF",     None),
-        ("atm_c.txt",  186,  "ATM_C",   None),
-        ("ptlf.txt",   1904, "PTLF",    2052),   # skip 2052-char file header
-        ("nfs_iss.txt", 407, "NFS ISS", None),
-        ("nfs_acq.txt", 274, "NFS ACQ", None),
+    for fname, expected_len, label in [
+        ("tlf.txt",    574,  "TLF"),
+        ("atm_c.txt",  186,  "ATM_C"),
+        ("ptlf.txt",   2610, "PTLF"),
+        ("nfs_iss.txt", 407, "NFS ISS"),
+        ("nfs_acq.txt", 274, "NFS ACQ"),
     ]:
         path = os.path.join(out_dir, fname)
         if os.path.exists(path):
-            bad, good = [], 0
+            bad = []
             with open(path) as f:
                 for i, line in enumerate(f):
                     l = line.rstrip("\n")
-                    if skip_len is not None and len(l) == skip_len:
-                        continue
                     if len(l) != expected_len:
                         bad.append((i + 1, len(l)))
-                    else:
-                        good += 1
             if bad:
                 print(f"  [FAIL] {label}: {len(bad)} records with wrong length (expected {expected_len})")
                 for ln, ln_len in bad[:3]:
                     print(f"         Line {ln}: {ln_len} chars")
                 errors += 1
             else:
-                print(f"  [OK]   {label}: all {good} records = {expected_len} chars")
+                count = sum(1 for _ in open(path))
+                print(f"  [OK]   {label}: all {count} records = {expected_len} chars")
 
     print(f"\n  Validation: {'PASS' if errors == 0 else f'FAIL ({errors} issues)'}")
 
