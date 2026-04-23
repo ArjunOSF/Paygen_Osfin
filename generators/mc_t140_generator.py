@@ -61,15 +61,18 @@ def _section_1ip727020_p1(
     cycle_str = f"{cycle:03d}"
     total_count  = len(net_txns)
     total_paise  = sum(t.amount for t in net_txns)
-    fee_paise    = int(total_paise * 0.0131)    # ~1.31% interchange (PE rate)
+    fee_paise    = int(total_paise * 0.0131)    # ~1.31% interchange
 
-    # Split into PE (electronic) and PF (full mag-stripe) — 80/20
-    pe_count = max(1, int(total_count * 0.8))
-    pf_count = total_count - pe_count
-    pe_paise = int(total_paise * 0.8)
-    pf_paise = total_paise - pe_paise
-    pe_fee   = int(fee_paise * 0.8)
-    pf_fee   = fee_paise - pe_fee
+    # Split into PD/P2/Q2 per real MC T140 format (confirmed from sample)
+    pd_count = max(1, int(total_count * 0.60))
+    p2_count = max(1, int(total_count * 0.35))
+    q2_count = max(0, total_count - pd_count - p2_count)
+    pd_paise = int(total_paise * 0.60)
+    p2_paise = int(total_paise * 0.35)
+    q2_paise = total_paise - pd_paise - p2_paise
+    pd_fee   = int(fee_paise * 0.60)
+    p2_fee   = int(fee_paise * 0.35)
+    q2_fee   = fee_paise - pd_fee - p2_fee
 
     def row(func, proc, ird, cnt, amt_p, amt_dr_cr, fee_p, fee_dr_cr):
         amt_s = f"{_fmt_amt(amt_p)} {amt_dr_cr}"
@@ -80,9 +83,16 @@ def _section_1ip727020_p1(
 
     sep = _pad(f" {'-'*12} {'-'*15} {'-'*3} {'-'*8} {'-'*26} {'-'*7} {'-'*23} {'-'*7}")
 
+    ird_rows = [
+        row("FIRST PRES.", "PURCHASE   ORIG", "PD", pd_count, pd_paise, "DR", pd_fee, "CR"),
+        row("",            "PURCHASE   ORIG", "P2", p2_count, p2_paise, "DR", p2_fee, "CR"),
+    ]
+    if q2_count > 0:
+        ird_rows.append(row("", "PURCHASE   ORIG", "Q2", q2_count, q2_paise, "DR", q2_fee, "CR"))
+
     lines = [
         _pad(f"1IP727020-AA{'':43}MASTERCARD WORLDWIDE{'':39}RUN DATE: {run_date}"),
-        _pad(f" ACCEPTANCE BRAND: MCC{'':26}CLEARING CYCLE {cycle_str} - NOTIFICATION{'':34}PAGE NO:         1"),
+        _pad(f" ACCEPTANCE BRAND: DMC{'':26}CLEARING CYCLE {cycle_str} - NOTIFICATION{'':34}PAGE NO:         1"),
         _pad(f" BUSINESS SERVICE LEVEL: INTRACOUNTRY{'':25}{business_date_iso}{'':61}"),
         _pad(f" BUSINESS SERVICE ID: 356001{'':105}"),
         _pad(f" FILE ID: {file_id}{'':113}"),
@@ -92,8 +102,7 @@ def _section_1ip727020_p1(
         _pad(f"{'':73}CURR{'':25}CURR{'':30}"),
         _pad(f" TRANS. FUNC. PROC.CODE{'':7}IRD{'':3}COUNTS{'':15}RECON AMOUNT{'':4}CODE{'':7}TRANS FEE{'':9}CODE{'':27}"),
         sep,
-        row("FIRST PRES.", "PURCHASE   ORIG", "PE", pe_count, pe_paise, "DR", pe_fee, "CR"),
-        row("",            "PURCHASE   ORIG", "PF", pf_count, pf_paise, "DR", pf_fee, "CR"),
+        *ird_rows,
         sep,
         _pad(
             f" FIRST PRES.  TOTAL{'':17}{total_count:>8} {_fmt_amt(total_paise):>24} DR 356-INR"
@@ -121,7 +130,7 @@ def _section_1ip727020_p2(
         _pad(f"{'':48}CLEARING CYCLE {cycle:03d} - NOTIFICATION{'':34}PAGE NO:         1"),
         _pad(f"{'':62}{business_date_iso}{'':61}"),
         _blank(),
-        _pad(f" ACCEPTANCE BRAND : MCC{'':109}"),
+        _pad(f" ACCEPTANCE BRAND : DMC{'':109}"),
         _pad(f" BUSINESS SERVICE LEVEL :INTRACOUNTRY{'':95}"),
         _pad(f" MEMBER ID: {member_id_11}{'':110}"),
         _pad(f" CURRENCY CODE : 356-INR{'':108}"),

@@ -41,7 +41,10 @@ import generators.mc_t140_generator  as t140_gen
 import generators.mc_t464_generator  as t464_gen
 import generators.visa_epin_generator as epin_gen
 import generators.rupay_generator    as rupay_gen
+import generators.rupay_863_generator as rupay863_gen
 import generators.nfs_generator      as nfs_gen
+import generators.fss_ej_generator   as fss_ej_gen
+import generators.mci_ar_generator   as mci_ar_gen
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +151,7 @@ def run_generators(
     role: str,
     network: Optional[str],
     pos_type: str = "PHYSICAL",
+    atm_vendor: str = "HYOSUNG",
 ) -> dict:
     """Run all generators for a given fileset. Returns files_written dict."""
     files_written = {}
@@ -171,10 +175,16 @@ def run_generators(
         print(f"  ATM_C       : {n} records → {os.path.basename(path)}")
 
     if file_set.generate_ej:
-        path = os.path.join(out_dir, "ej.csv")
-        n = ej_gen.generate(transactions, config, output_path=path)
-        files_written["EJ (Hyosung)"] = (path, n)
-        print(f"  EJ          : {n} records → {os.path.basename(path)}")
+        if atm_vendor.upper() == "FSS":
+            path = os.path.join(out_dir, "fss_ej.txt")
+            n = fss_ej_gen.generate(transactions, config, output_path=path)
+            files_written["EJ (FSS Cards)"] = (path, n)
+            print(f"  FSS EJ      : {n} records → {os.path.basename(path)}")
+        else:
+            path = os.path.join(out_dir, "ej.csv")
+            n = ej_gen.generate(transactions, config, output_path=path)
+            files_written["EJ (Hyosung)"] = (path, n)
+            print(f"  EJ          : {n} records → {os.path.basename(path)}")
 
     if file_set.generate_t112:
         path = os.path.join(out_dir, "t112.txt")
@@ -219,6 +229,22 @@ def run_generators(
         files_written["NFS ACQ"] = (path, n)
         print(f"  NFS ACQ     : {n} records → {os.path.basename(path)}")
 
+    if file_set.generate_rupay or file_set.generate_rupay_acq:
+        cat = "ACQ" if file_set.generate_rupay_acq else "ISS"
+        fcat = "A" if channel.upper() == "ATM" else "P"
+        path = os.path.join(out_dir, f"rupay_863_{cat.lower()}.dat")
+        n = rupay863_gen.generate(transactions, config, output_path=path, file_category=fcat)
+        files_written[f"RuPay 863 ({cat})"] = (path, n)
+        print(f"  RuPay 863   : {n} records → {os.path.basename(path)}")
+
+    # MCI.AR daily control report — always generated for MC/NFS scenarios
+    has_mc_or_nfs = any(t.network.upper() in ("MC", "NFS") for t in transactions)
+    if has_mc_or_nfs:
+        path = os.path.join(out_dir, "mci_ar.txt")
+        mci_ar_gen.generate(transactions, config, business_date=date_str, output_path=path)
+        files_written["MCI.AR"] = (path, 1)
+        print(f"  MCI.AR      : daily control report → {os.path.basename(path)}")
+
     return files_written
 
 
@@ -230,8 +256,9 @@ def run_single(validate: bool = False) -> None:
     # 1. Channel
     channel = prompt("1. Channel?", ["ATM", "POS"], default="ATM")
 
-    # 1b. POS sub-type (only for POS)
-    pos_type = "PHYSICAL"
+    # 1b. Sub-type based on channel
+    pos_type   = "PHYSICAL"
+    atm_vendor = "HYOSUNG"
     if channel.upper() == "POS":
         pos_type_choice = prompt(
             "1b. POS type?",
@@ -239,6 +266,13 @@ def run_single(validate: bool = False) -> None:
             default="Physical POS",
         )
         pos_type = "ECOM" if pos_type_choice.upper().startswith("E") else "PHYSICAL"
+    elif channel.upper() == "ATM":
+        vendor_choice = prompt(
+            "1b. ATM Vendor?",
+            ["Hyosung", "FSS"],
+            default="Hyosung",
+        )
+        atm_vendor = "FSS" if vendor_choice.upper().startswith("F") else "HYOSUNG"
 
     # 2. Role
     role = prompt("2. Role?", ["On-Us", "Acquiring", "Issuing"], default="On-Us")
@@ -302,7 +336,7 @@ def run_single(validate: bool = False) -> None:
 
     files_written = run_generators(
         transactions, file_set, config, out_dir,
-        date_str, channel, role, network, pos_type,
+        date_str, channel, role, network, pos_type, atm_vendor,
     )
 
     write_summary(
@@ -336,7 +370,8 @@ def run_batch(validate: bool = False) -> None:
     # Channel
     channel = prompt("1. Channel?", ["ATM", "POS"], default="ATM")
 
-    pos_type = "PHYSICAL"
+    pos_type   = "PHYSICAL"
+    atm_vendor = "HYOSUNG"
     if channel.upper() == "POS":
         pos_type_choice = prompt(
             "1b. POS type?",
@@ -344,6 +379,13 @@ def run_batch(validate: bool = False) -> None:
             default="Physical POS",
         )
         pos_type = "ECOM" if pos_type_choice.upper().startswith("E") else "PHYSICAL"
+    elif channel.upper() == "ATM":
+        vendor_choice = prompt(
+            "1b. ATM Vendor?",
+            ["Hyosung", "FSS"],
+            default="Hyosung",
+        )
+        atm_vendor = "FSS" if vendor_choice.upper().startswith("F") else "HYOSUNG"
 
     # Role (batch is always Acquiring — issuing is per-network)
     role = prompt("2. Role?", ["Acquiring", "Issuing"], default="Acquiring")
@@ -444,10 +486,16 @@ def run_batch(validate: bool = False) -> None:
 
     # Merged EJ (ATM non-issuing only)
     if channel.upper() == "ATM" and role.upper() not in ("ISSUING", "ISS"):
-        path = os.path.join(out_dir, "ej_merged.csv")
-        n = ej_gen.generate(all_transactions, config, output_path=path)
-        all_files_written["EJ Merged"] = (path, n)
-        print(f"  EJ merged   : {n} records → {os.path.basename(path)}")
+        if atm_vendor.upper() == "FSS":
+            path = os.path.join(out_dir, "fss_ej_merged.txt")
+            n = fss_ej_gen.generate(all_transactions, config, output_path=path)
+            all_files_written["FSS EJ Merged"] = (path, n)
+            print(f"  FSS EJ merged: {n} records → {os.path.basename(path)}")
+        else:
+            path = os.path.join(out_dir, "ej_merged.csv")
+            n = ej_gen.generate(all_transactions, config, output_path=path)
+            all_files_written["EJ Merged"] = (path, n)
+            print(f"  EJ merged   : {n} records → {os.path.basename(path)}")
 
     zip_path = zip_output(out_dir)
     print(f"\n  Download : {zip_path}")
