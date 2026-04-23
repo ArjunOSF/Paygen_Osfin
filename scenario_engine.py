@@ -27,6 +27,8 @@ class FileSet:
     generate_visa_epin:  bool = False
     generate_rupay:      bool = False
     generate_rupay_acq:  bool = False   # ACQ vs ISS RuPay have different file categories
+    generate_nfs_iss:    bool = False   # NFS Issuer file
+    generate_nfs_acq:    bool = False   # NFS Acquirer file
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +92,11 @@ def resolve_fileset(channel: str, role: str, network: Optional[str]) -> FileSet:
                 fs.generate_rupay_acq = True
             else:
                 fs.generate_rupay = True
+        elif net == "NFS":
+            if is_atm and is_acq:
+                fs.generate_nfs_acq = True
+            else:
+                fs.generate_nfs_iss = True
 
     return fs
 

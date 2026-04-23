@@ -7,14 +7,9 @@ Usage:
   python main.py                    # interactive question flow
   python main.py --validate         # run with validation checks after generation
 
-Question flow:
-  1. Channel   → ATM | POS
-  2. Role      → On-Us | Acquiring | Issuing
-  3. Network   → MC | Visa | RuPay   (skipped for On-Us)
-  4. Scenario  → Exact Match | Custom (per-layer pass/fail/missing)
-  5. Volume    → number of transactions
-  6. Date      → YYYYMMDD
-  7. Config    → defaults | custom JSON path
+Modes:
+  Single scenario  — one channel/role/network, one set of files
+  Full day batch   — multiple networks, merged TLF + ATM_C, separate network files
 """
 
 import argparse
@@ -24,27 +19,29 @@ import subprocess
 import sys
 import zipfile
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 # Add generators/ to path so imports work cleanly
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "generators"))
 
-from data_generator import generate_transactions
+from data_generator import generate_transactions, Transaction
 from scenario_engine import (
     resolve_fileset, apply_layer_config,
     build_exact_match_config, prompt_custom_config,
+    FileSet,
 )
 from summary_generator import write_summary
 
-import generators.atm_c_generator   as atm_c_gen
-import generators.ej_generator      as ej_gen
-import generators.tlf_generator     as tlf_gen
-import generators.ptlf_generator    as ptlf_gen
-import generators.mc_t112_generator as t112_gen
-import generators.mc_t140_generator as t140_gen
-import generators.mc_t464_generator as t464_gen
+import generators.atm_c_generator    as atm_c_gen
+import generators.ej_generator       as ej_gen
+import generators.tlf_generator      as tlf_gen
+import generators.ptlf_generator     as ptlf_gen
+import generators.mc_t112_generator  as t112_gen
+import generators.mc_t140_generator  as t140_gen
+import generators.mc_t464_generator  as t464_gen
 import generators.visa_epin_generator as epin_gen
-import generators.rupay_generator   as rupay_gen
+import generators.rupay_generator    as rupay_gen
+import generators.nfs_generator      as nfs_gen
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +61,24 @@ def prompt(question: str, choices: list, default: Optional[str] = None) -> str:
             if normalized == c.upper() or normalized == c[0].upper():
                 return c
         print(f"  Please enter one of: {', '.join(choices)}")
+
+
+def prompt_multiselect(question: str, choices: list) -> list:
+    """Comma-separated multi-select. Returns list of chosen items."""
+    choices_str = ", ".join(choices)
+    while True:
+        raw = input(f"\n{question}\n  Options: {choices_str}\n  Enter choices (comma-separated): ").strip()
+        selected = [s.strip().upper() for s in raw.split(",") if s.strip()]
+        valid = []
+        for sel in selected:
+            for c in choices:
+                if sel == c.upper() or sel == c[0].upper():
+                    if c not in valid:
+                        valid.append(c)
+                    break
+        if valid:
+            return valid
+        print(f"  Please enter at least one of: {choices_str}")
 
 
 def prompt_text(question: str, default: str) -> str:
@@ -94,10 +109,7 @@ def load_config(config_path: Optional[str]) -> dict:
         return json.load(f)
 
 
-def make_output_dir(base: str, business_date: str, channel: str, role: str, network: str) -> str:
-    tag = f"{business_date}_{channel.upper()}_{role.upper()}"
-    if network:
-        tag += f"_{network.upper()}"
+def make_output_dir(base: str, tag: str) -> str:
     out = os.path.join(base, tag)
     os.makedirs(out, exist_ok=True)
     return out
@@ -114,7 +126,6 @@ def zip_output(out_dir: str) -> str:
             if os.path.isfile(fpath):
                 zf.write(fpath, fname)
 
-    # Reveal the zip in Finder (macOS) — no-op on other platforms
     try:
         subprocess.run(["open", "--reveal", zip_path], check=False)
     except FileNotFoundError:
@@ -124,107 +135,22 @@ def zip_output(out_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Generator runner — shared by both single and batch modes
 # ---------------------------------------------------------------------------
 
-def run(validate: bool = False) -> None:
-    print("\n" + "=" * 60)
-    print("  Universal Payment Recon Test File Generator")
-    print("=" * 60)
-
-    # 1. Channel
-    channel = prompt(
-        "1. Channel?",
-        ["ATM", "POS"],
-        default="ATM",
-    )
-
-    # 2. Role
-    role = prompt(
-        "2. Role?",
-        ["On-Us", "Acquiring", "Issuing"],
-        default="On-Us",
-    )
-    # Normalize
-    role_upper = role.upper().replace("-", "").replace(" ", "")
-    if role_upper in ("ONUS", "ONUS"):
-        role = "ON-US"
-
-    # 3. Network (skipped for On-Us)
-    network: Optional[str] = None
-    if role.upper() not in ("ON-US", "ONUS"):
-        network = prompt(
-            "3. Network?",
-            ["MC", "Visa", "RuPay"],
-            default="MC",
-        )
-
-    # 4. Scenario
-    scenario_type = prompt(
-        "4. Scenario?",
-        ["Exact Match", "Custom"],
-        default="Exact Match",
-    )
-
-    has_network = network is not None
-
-    if scenario_type.upper().startswith("E"):
-        layer_cfg = build_exact_match_config()
-        print(f"\n  → All layers: PASS (exact match)")
-    else:
-        layer_cfg = prompt_custom_config(channel, role, has_network)
-
-    # 5. Volume
-    count = prompt_int("5. Number of transactions?", default=10, min_val=1)
-
-    # 6. Date
-    today = datetime.now().strftime("%Y%m%d")
-    date_str = prompt_text("6. Business date (YYYYMMDD)?", default=today)
-    try:
-        datetime.strptime(date_str, "%Y%m%d")
-    except ValueError:
-        print(f"  Invalid date '{date_str}', using today: {today}")
-        date_str = today
-
-    # 7. Config
-    config_choice = prompt("7. Config?", ["Defaults", "Custom"], default="Defaults")
-    if config_choice.upper().startswith("C"):
-        config_path = prompt_text("   Path to custom config JSON?", default="")
-        config = load_config(config_path if config_path else None)
-    else:
-        config = load_config(None)
-
-    # ---------------------------------------------------------------------------
-    # Generate transactions (shared data model)
-    # ---------------------------------------------------------------------------
-    net_str = network or "ONUS"
-    print(f"\n  Generating {count} transactions for {channel.upper()} {role.upper()} {net_str}...")
-
-    transactions = generate_transactions(
-        count=count,
-        network=network or "MC",   # On-Us uses MC format internally (PAN prefix)
-        business_date=date_str,
-        config=config,
-    )
-
-    # Apply layer flags per scenario
-    apply_layer_config(transactions, layer_cfg, channel, role)
-
-    # Resolve which files to generate
-    file_set = resolve_fileset(channel, role, network)
-
-    # Output directory
-    output_base = os.path.join(os.path.dirname(__file__), "output")
-    out_dir = make_output_dir(output_base, date_str, channel, role, net_str)
-
+def run_generators(
+    transactions: List[Transaction],
+    file_set: FileSet,
+    config: dict,
+    out_dir: str,
+    date_str: str,
+    channel: str,
+    role: str,
+    network: Optional[str],
+    pos_type: str = "PHYSICAL",
+) -> dict:
+    """Run all generators for a given fileset. Returns files_written dict."""
     files_written = {}
-
-    print(f"\n  Output dir: {out_dir}")
-    print()
-
-    # ---------------------------------------------------------------------------
-    # Run each generator
-    # ---------------------------------------------------------------------------
 
     if file_set.generate_tlf:
         path = os.path.join(out_dir, "tlf.txt")
@@ -234,7 +160,7 @@ def run(validate: bool = False) -> None:
 
     if file_set.generate_ptlf:
         path = os.path.join(out_dir, "ptlf.txt")
-        n = ptlf_gen.generate(transactions, config, role=role, output_path=path)
+        n = ptlf_gen.generate(transactions, config, role=role, output_path=path, pos_type=pos_type)
         files_written["PTLF (Switch POS)"] = (path, n)
         print(f"  PTLF        : {n} records → {os.path.basename(path)}")
 
@@ -281,9 +207,104 @@ def run(validate: bool = False) -> None:
         files_written[f"RuPay XML ({cat})"] = (path, n)
         print(f"  RuPay XML   : {n} transactions → {os.path.basename(path)}")
 
-    # ---------------------------------------------------------------------------
-    # Summary
-    # ---------------------------------------------------------------------------
+    if file_set.generate_nfs_iss:
+        path = os.path.join(out_dir, "nfs_iss.txt")
+        n = nfs_gen.generate(transactions, config, file_category="ISS", output_path=path)
+        files_written["NFS ISS"] = (path, n)
+        print(f"  NFS ISS     : {n} records → {os.path.basename(path)}")
+
+    if file_set.generate_nfs_acq:
+        path = os.path.join(out_dir, "nfs_acq.txt")
+        n = nfs_gen.generate(transactions, config, file_category="ACQ", output_path=path)
+        files_written["NFS ACQ"] = (path, n)
+        print(f"  NFS ACQ     : {n} records → {os.path.basename(path)}")
+
+    return files_written
+
+
+# ---------------------------------------------------------------------------
+# Single scenario mode
+# ---------------------------------------------------------------------------
+
+def run_single(validate: bool = False) -> None:
+    # 1. Channel
+    channel = prompt("1. Channel?", ["ATM", "POS"], default="ATM")
+
+    # 1b. POS sub-type (only for POS)
+    pos_type = "PHYSICAL"
+    if channel.upper() == "POS":
+        pos_type_choice = prompt(
+            "1b. POS type?",
+            ["Physical POS", "E-commerce"],
+            default="Physical POS",
+        )
+        pos_type = "ECOM" if pos_type_choice.upper().startswith("E") else "PHYSICAL"
+
+    # 2. Role
+    role = prompt("2. Role?", ["On-Us", "Acquiring", "Issuing"], default="On-Us")
+    role_upper = role.upper().replace("-", "").replace(" ", "")
+    if role_upper == "ONUS":
+        role = "ON-US"
+
+    # 3. Network (skipped for On-Us)
+    network: Optional[str] = None
+    if role.upper() not in ("ON-US", "ONUS"):
+        network = prompt("3. Network?", ["MC", "Visa", "RuPay", "NFS"], default="MC")
+
+    # 4. Scenario
+    scenario_type = prompt("4. Scenario?", ["Exact Match", "Custom"], default="Exact Match")
+    has_network = network is not None
+    if scenario_type.upper().startswith("E"):
+        layer_cfg = build_exact_match_config()
+        print(f"\n  → All layers: PASS (exact match)")
+    else:
+        layer_cfg = prompt_custom_config(channel, role, has_network)
+
+    # 5. Volume
+    count = prompt_int("5. Number of transactions?", default=10, min_val=1)
+
+    # 6. Date
+    today = datetime.now().strftime("%Y%m%d")
+    date_str = prompt_text("6. Business date (YYYYMMDD)?", default=today)
+    try:
+        datetime.strptime(date_str, "%Y%m%d")
+    except ValueError:
+        print(f"  Invalid date '{date_str}', using today: {today}")
+        date_str = today
+
+    # 7. Config
+    config_choice = prompt("7. Config?", ["Defaults", "Custom"], default="Defaults")
+    if config_choice.upper().startswith("C"):
+        config_path = prompt_text("   Path to custom config JSON?", default="")
+        config = load_config(config_path if config_path else None)
+    else:
+        config = load_config(None)
+
+    net_str = network or "ONUS"
+    print(f"\n  Generating {count} transactions for {channel.upper()} {role.upper()} {net_str}...")
+
+    transactions = generate_transactions(
+        count=count,
+        network=network or "MC",
+        business_date=date_str,
+        config=config,
+    )
+    apply_layer_config(transactions, layer_cfg, channel, role)
+    file_set = resolve_fileset(channel, role, network)
+
+    output_base = os.path.join(os.path.dirname(__file__), "output")
+    tag = f"{date_str}_{channel.upper()}_{role.upper()}_{net_str}"
+    if channel.upper() == "POS" and pos_type == "ECOM":
+        tag += "_ECOM"
+    out_dir = make_output_dir(output_base, tag)
+
+    print(f"\n  Output dir: {out_dir}\n")
+
+    files_written = run_generators(
+        transactions, file_set, config, out_dir,
+        date_str, channel, role, network, pos_type,
+    )
+
     write_summary(
         output_dir=out_dir,
         channel=channel,
@@ -297,35 +318,189 @@ def run(validate: bool = False) -> None:
         files_written=files_written,
     )
 
-    # ---------------------------------------------------------------------------
-    # Zip for download
-    # ---------------------------------------------------------------------------
     zip_path = zip_output(out_dir)
     print(f"  Download : {zip_path}")
 
-    # ---------------------------------------------------------------------------
-    # Validation (optional)
-    # ---------------------------------------------------------------------------
     if validate:
         print("\n  Running join key validation...")
         _validate(out_dir, file_set, transactions)
+
+
+# ---------------------------------------------------------------------------
+# Full day batch mode
+# ---------------------------------------------------------------------------
+
+def run_batch(validate: bool = False) -> None:
+    print("\n  [BATCH MODE] Generates per-network files + one merged TLF + one merged ATM_C")
+
+    # Channel
+    channel = prompt("1. Channel?", ["ATM", "POS"], default="ATM")
+
+    pos_type = "PHYSICAL"
+    if channel.upper() == "POS":
+        pos_type_choice = prompt(
+            "1b. POS type?",
+            ["Physical POS", "E-commerce"],
+            default="Physical POS",
+        )
+        pos_type = "ECOM" if pos_type_choice.upper().startswith("E") else "PHYSICAL"
+
+    # Role (batch is always Acquiring — issuing is per-network)
+    role = prompt("2. Role?", ["Acquiring", "Issuing"], default="Acquiring")
+    role_upper = role.upper().replace("-", "").replace(" ", "")
+
+    # Multi-select networks
+    networks = prompt_multiselect(
+        "3. Networks to include?",
+        ["MC", "Visa", "RuPay", "NFS"],
+    )
+    print(f"  → Selected: {', '.join(networks)}")
+
+    # Per-network volume + scenario
+    network_configs = {}
+    for net in networks:
+        print(f"\n  --- {net} ---")
+        count = prompt_int(f"  Volume for {net}?", default=10, min_val=1)
+        sc = prompt(f"  Scenario for {net}?", ["Exact Match", "Custom"], default="Exact Match")
+        has_network = True
+        if sc.upper().startswith("E"):
+            layer_cfg = build_exact_match_config()
+        else:
+            layer_cfg = prompt_custom_config(channel, role, has_network)
+        network_configs[net] = {"count": count, "layer_cfg": layer_cfg}
+
+    # Date + Config
+    today = datetime.now().strftime("%Y%m%d")
+    date_str = prompt_text("4. Business date (YYYYMMDD)?", default=today)
+    try:
+        datetime.strptime(date_str, "%Y%m%d")
+    except ValueError:
+        date_str = today
+
+    config_choice = prompt("5. Config?", ["Defaults", "Custom"], default="Defaults")
+    if config_choice.upper().startswith("C"):
+        config_path = prompt_text("   Path to custom config JSON?", default="")
+        config = load_config(config_path if config_path else None)
+    else:
+        config = load_config(None)
+
+    # Output dir
+    output_base = os.path.join(os.path.dirname(__file__), "output")
+    tag = f"{date_str}_{channel.upper()}_{role.upper()}_BATCH_{'_'.join(networks)}"
+    out_dir = make_output_dir(output_base, tag)
+    print(f"\n  Output dir: {out_dir}\n")
+
+    all_transactions: List[Transaction] = []
+    all_files_written = {}
+
+    # Generate per-network files
+    for net_idx, net in enumerate(networks):
+        cfg = network_configs[net]
+        count = cfg["count"]
+        layer_cfg = cfg["layer_cfg"]
+
+        print(f"  [{net}] Generating {count} transactions...")
+        txns = generate_transactions(
+            count=count,
+            network=net,
+            business_date=date_str,
+            config=config,
+            seed=int(datetime.now().timestamp()) + net_idx * 100_000,
+        )
+        apply_layer_config(txns, layer_cfg, channel, role)
+
+        # Network-only fileset (no switch/CBS — those get merged)
+        file_set = resolve_fileset(channel, role, net)
+        file_set.generate_tlf   = False   # merged separately
+        file_set.generate_ptlf  = False
+        file_set.generate_atm_c = False
+        file_set.generate_ej    = False
+
+        net_files = run_generators(
+            txns, file_set, config, out_dir,
+            date_str, channel, role, net, pos_type,
+        )
+        all_files_written.update(net_files)
+        all_transactions.extend(txns)
+
+    # Merged TLF (all transactions → one file)
+    print(f"\n  [MERGE] Writing merged switch + CBS files...")
+    if channel.upper() == "ATM":
+        path = os.path.join(out_dir, "tlf_merged.txt")
+        n = tlf_gen.generate(all_transactions, config, path)
+        all_files_written["TLF Merged"] = (path, n)
+        print(f"  TLF merged  : {n} records → {os.path.basename(path)}")
+    else:
+        path = os.path.join(out_dir, "ptlf_merged.txt")
+        n = ptlf_gen.generate(all_transactions, config, role=role, output_path=path, pos_type=pos_type)
+        all_files_written["PTLF Merged"] = (path, n)
+        print(f"  PTLF merged : {n} records → {os.path.basename(path)}")
+
+    # Merged ATM_C
+    path = os.path.join(out_dir, "atm_c_merged.txt")
+    n = atm_c_gen.generate(all_transactions, config, channel=channel, output_path=path)
+    all_files_written["ATM_C Merged"] = (path, n)
+    print(f"  ATM_C merged: {n} records → {os.path.basename(path)}")
+
+    # Merged EJ (ATM non-issuing only)
+    if channel.upper() == "ATM" and role.upper() not in ("ISSUING", "ISS"):
+        path = os.path.join(out_dir, "ej_merged.csv")
+        n = ej_gen.generate(all_transactions, config, output_path=path)
+        all_files_written["EJ Merged"] = (path, n)
+        print(f"  EJ merged   : {n} records → {os.path.basename(path)}")
+
+    zip_path = zip_output(out_dir)
+    print(f"\n  Download : {zip_path}")
+
+    if validate:
+        # Validate merged files
+        from scenario_engine import FileSet as FS
+        merged_fs = FS(
+            generate_tlf=(channel.upper() == "ATM"),
+            generate_ptlf=(channel.upper() == "POS"),
+            generate_atm_c=True,
+        )
+        # Remap paths for validate to pick up merged files
+        _validate_merged(out_dir, channel, all_transactions)
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+def run(validate: bool = False) -> None:
+    print("\n" + "=" * 60)
+    print("  Universal Payment Recon Test File Generator")
+    print("=" * 60)
+
+    mode = prompt(
+        "Mode?",
+        ["Single scenario", "Full day batch"],
+        default="Single scenario",
+    )
+
+    if mode.upper().startswith("F"):
+        run_batch(validate=validate)
+    else:
+        run_single(validate=validate)
 
     print("\n" + "=" * 60)
     print("  Done!")
     print("=" * 60 + "\n")
 
 
+# ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
+
 def _validate(out_dir: str, file_set, transactions) -> None:
-    """Quick spot-check: SEQ_NO consistency between TLF and ATM_C."""
     errors = 0
 
-    # Check TLF SEQ_NO (pos 188–199) matches ATM_C SEQ_NO (pos 45–56)
     tlf_path   = os.path.join(out_dir, "tlf.txt")
     atm_c_path = os.path.join(out_dir, "atm_c.txt")
 
     if os.path.exists(tlf_path) and os.path.exists(atm_c_path):
-        tlf_seqs   = set()
-        atm_c_seqs = set()
+        tlf_seqs, atm_c_seqs = set(), set()
         with open(tlf_path) as f:
             for line in f:
                 if len(line.rstrip("\n")) >= 200:
@@ -334,20 +509,16 @@ def _validate(out_dir: str, file_set, transactions) -> None:
             for line in f:
                 if len(line.rstrip("\n")) >= 57:
                     atm_c_seqs.add(line[45:57])
-
         missing = tlf_seqs - atm_c_seqs
-        extra   = atm_c_seqs - tlf_seqs
-        if missing or extra:
-            print(f"  [WARN] TLF↔ATM_C SEQ_NO mismatch: {len(missing)} in TLF only, {len(extra)} in ATM_C only")
+        if missing or tlf_seqs - atm_c_seqs:
+            print(f"  [WARN] TLF↔ATM_C SEQ_NO mismatch: {len(missing)} in TLF only")
             errors += 1
         else:
             print(f"  [OK]   TLF ↔ ATM_C SEQ_NO join: {len(tlf_seqs)} records match")
 
-    # Check PTLF SEQ_NO (pos 282–293) matches ATM_C SEQ_NO (pos 45–56)
     ptlf_path = os.path.join(out_dir, "ptlf.txt")
     if os.path.exists(ptlf_path) and os.path.exists(atm_c_path):
-        ptlf_seqs  = set()
-        atm_c_seqs = set()
+        ptlf_seqs, atm_c_seqs = set(), set()
         with open(ptlf_path) as f:
             for line in f:
                 if len(line.rstrip("\n")) >= 294:
@@ -356,19 +527,16 @@ def _validate(out_dir: str, file_set, transactions) -> None:
             for line in f:
                 if len(line.rstrip("\n")) >= 57:
                     atm_c_seqs.add(line[45:57])
-
         missing = ptlf_seqs - atm_c_seqs
         if missing:
-            print(f"  [WARN] PTLF↔ATM_C SEQ_NO mismatch: {len(missing)} in PTLF not in ATM_C")
+            print(f"  [WARN] PTLF↔ATM_C SEQ_NO mismatch: {len(missing)} in PTLF only")
             errors += 1
         else:
             print(f"  [OK]   PTLF ↔ ATM_C SEQ_NO join: {len(ptlf_seqs)} records match")
 
-    # Check T112 RRN (DE37) matches ATM_C RR_NO (pos 57–68)
     t112_path = os.path.join(out_dir, "t112.txt")
     if os.path.exists(t112_path) and os.path.exists(atm_c_path):
-        t112_rrns  = set()
-        atm_c_rrns = set()
+        t112_rrns, atm_c_rrns = set(), set()
         with open(t112_path) as f:
             for line in f:
                 for part in line.split("|"):
@@ -378,48 +546,95 @@ def _validate(out_dir: str, file_set, transactions) -> None:
             for line in f:
                 if len(line.rstrip("\n")) >= 69:
                     atm_c_rrns.add(line[57:69])
-
         missing = t112_rrns - atm_c_rrns
         if missing and t112_rrns:
-            print(f"  [WARN] T112.DE37 ↔ ATM_C.RR_NO mismatch: {len(missing)} DE37 values not in ATM_C")
+            print(f"  [WARN] T112.DE37 ↔ ATM_C.RR_NO mismatch: {len(missing)} DE37 not in ATM_C")
             errors += 1
         elif t112_rrns:
             print(f"  [OK]   T112.DE37 ↔ ATM_C.RR_NO join: {len(t112_rrns)} records match")
 
-    # Record length checks
+    # NFS join check — STAN (pos 49, len 12) → ATM_C.SEQ_NO (pos 45, len 12)
+    for nfs_fname in ("nfs_iss.txt", "nfs_acq.txt"):
+        nfs_path = os.path.join(out_dir, nfs_fname)
+        if os.path.exists(nfs_path) and os.path.exists(atm_c_path):
+            nfs_stans, atm_c_seqs = set(), set()
+            with open(nfs_path) as f:
+                for line in f:
+                    l = line.rstrip("\n")
+                    if len(l) >= 61:
+                        nfs_stans.add(l[49:61])
+            with open(atm_c_path) as f:
+                for line in f:
+                    l = line.rstrip("\n")
+                    if len(l) >= 57:
+                        atm_c_seqs.add(l[45:57])
+            missing = nfs_stans - atm_c_seqs
+            label = nfs_fname.upper().replace(".TXT", "")
+            if missing:
+                print(f"  [WARN] {label}.STAN ↔ ATM_C.SEQ_NO mismatch: {len(missing)} not matched")
+                errors += 1
+            else:
+                print(f"  [OK]   {label}.STAN ↔ ATM_C.SEQ_NO join: {len(nfs_stans)} records match")
+
     for fname, expected_len, label in [
         ("tlf.txt",    574,  "TLF"),
         ("atm_c.txt",  186,  "ATM_C"),
         ("ptlf.txt",   2610, "PTLF"),
+        ("nfs_iss.txt", 407, "NFS ISS"),
+        ("nfs_acq.txt", 274, "NFS ACQ"),
     ]:
         path = os.path.join(out_dir, fname)
         if os.path.exists(path):
             bad = []
             with open(path) as f:
                 for i, line in enumerate(f):
-                    line_stripped = line.rstrip("\n")
-                    if len(line_stripped) != expected_len:
-                        bad.append((i + 1, len(line_stripped)))
+                    l = line.rstrip("\n")
+                    if len(l) != expected_len:
+                        bad.append((i + 1, len(l)))
             if bad:
                 print(f"  [FAIL] {label}: {len(bad)} records with wrong length (expected {expected_len})")
                 for ln, ln_len in bad[:3]:
                     print(f"         Line {ln}: {ln_len} chars")
                 errors += 1
             else:
-                lines_count = sum(1 for _ in open(path))
-                print(f"  [OK]   {label}: all {lines_count} records = {expected_len} chars")
+                count = sum(1 for _ in open(path))
+                print(f"  [OK]   {label}: all {count} records = {expected_len} chars")
 
     print(f"\n  Validation: {'PASS' if errors == 0 else f'FAIL ({errors} issues)'}")
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+def _validate_merged(out_dir: str, channel: str, transactions) -> None:
+    errors = 0
+    switch_file = "tlf_merged.txt" if channel.upper() == "ATM" else "ptlf_merged.txt"
+    atm_c_path  = os.path.join(out_dir, "atm_c_merged.txt")
+    sw_path     = os.path.join(out_dir, switch_file)
+
+    if os.path.exists(sw_path) and os.path.exists(atm_c_path):
+        sw_seqs, atm_c_seqs = set(), set()
+        pos_sw = 188 if channel.upper() == "ATM" else 282
+        with open(sw_path) as f:
+            for line in f:
+                l = line.rstrip("\n")
+                if len(l) > pos_sw + 12:
+                    sw_seqs.add(l[pos_sw:pos_sw + 12])
+        with open(atm_c_path) as f:
+            for line in f:
+                l = line.rstrip("\n")
+                if len(l) >= 57:
+                    atm_c_seqs.add(l[45:57])
+        missing = sw_seqs - atm_c_seqs
+        label = "TLF" if channel.upper() == "ATM" else "PTLF"
+        if missing:
+            print(f"  [WARN] Merged {label}↔ATM_C SEQ_NO mismatch: {len(missing)} unmatched")
+            errors += 1
+        else:
+            print(f"  [OK]   Merged {label} ↔ ATM_C SEQ_NO join: {len(sw_seqs)} records match")
+
+    print(f"\n  Batch validation: {'PASS' if errors == 0 else f'FAIL ({errors} issues)'}")
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Universal Payment Recon Test File Generator"
-    )
+    parser = argparse.ArgumentParser(description="Universal Payment Recon Test File Generator")
     parser.add_argument("--validate", action="store_true",
                         help="Run join key and record length validation after generation")
     args = parser.parse_args()

@@ -75,7 +75,7 @@ def _place(buf: list, value: str, start: int, length: int) -> None:
             buf[start + i] = ch
 
 
-def _build_record(txn: Transaction, config: dict, issuer_code: str) -> str:
+def _build_record(txn: Transaction, config: dict, issuer_code: str, pos_type: str = "PHYSICAL") -> str:
     buf = list(" " * RECORD_LEN)
 
     # headx
@@ -88,8 +88,7 @@ def _build_record(txn: Transaction, config: dict, issuer_code: str) -> str:
     _place(buf, "0",                    182,  1)   # UserDataFieldFlag
 
     # authx
-    auth_type = "0210"
-    _place(buf, auth_type,              183,  4)   # AuthType
+    _place(buf, "0210",                 183,  4)   # AuthType
     _place(buf, txn.switch_status,      187,  2)   # Status "00" or "57"
     _place(buf, issuer_code,            189,  2)   # IssuerCode "00"=on-us, "30"=issuing
     _place(buf, txn.date_yymmdd,        250,  6)   # TranDate
@@ -105,9 +104,12 @@ def _build_record(txn: Transaction, config: dict, issuer_code: str) -> str:
     _place(buf, "0000000000000000000",  474, 19)   # Amount2 (no cashback)
     _place(buf, txn.approval_code.ljust(8), 608, 8)  # ApprovalCode → MC DE38
     _place(buf, "00",                   653,  2)   # ReasonForChargeback
-    _place(buf, "051",                  658,  3)   # PANEntryMode = chip
+
+    # PANEntryMode: 012=e-commerce, 051=chip, 071=contactless
+    pan_entry = "012" if pos_type.upper() == "ECOM" else "051"
+    _place(buf, pan_entry,              658,  3)   # PANEntryMode
+
     _place(buf, "1",                    706,  1)   # RefreshImpactInd
-    # OriginalSeqNum at 766 — space for non-reversals
 
     return "".join(buf)
 
@@ -115,18 +117,18 @@ def _build_record(txn: Transaction, config: dict, issuer_code: str) -> str:
 def generate(
     transactions: List[Transaction],
     config: dict,
-    role: str,          # "ON-US" | "ISSUING"
+    role: str,              # "ON-US" | "ISSUING"
     output_path: str,
+    pos_type: str = "PHYSICAL",   # "PHYSICAL" | "ECOM"
 ) -> int:
     """Write PTLF fixed-width file. Returns count of records written."""
-    # IssuerCode: 00–29 = on-us, 30–99 = not-on-us (issuing)
     issuer_code = "00" if role.upper() in ("ON-US", "ONUS") else "30"
     written = 0
     with open(output_path, "w", encoding="utf-8") as f:
         for txn in transactions:
             if not txn.in_switch:
                 continue
-            record = _build_record(txn, config, issuer_code)
+            record = _build_record(txn, config, issuer_code, pos_type)
             assert len(record) == RECORD_LEN, f"PTLF record length {len(record)} != {RECORD_LEN}"
             f.write(record + "\n")
             written += 1
