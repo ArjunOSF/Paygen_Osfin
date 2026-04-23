@@ -1,0 +1,176 @@
+5200260423142120P
+
+1SWCHD363                                                                                           
+MASTERCARD DEBIT SWITCH                                                                             
+DAILY CONTROL REPORT  ACQUIRING PROCESSOR                                                           
+WORK OF: 05/22/22                                        PAGE:  1                                   
+                                                                                                    
+PROCESSOR      : IDFC BANK LIMITED                                                                  
+PROCESSOR ID   : 9000002007                                                                         
+CURRENCY       : 840 U.S. Dollar                                                                    
+SETTLEMENT ICA : 008653                                                                             
+                                                                                                    
+TRANSACTIONS                                                                                        
+                    FINANCIAL        INTERCHANGE                                                    
+          NUMBER            NUMBER                                                                  
+          APPROVED DENIALS  AMOUNT    TRANS   AMOUNT                                                
+                                             COUNTS  FINANCIAL % BASED  NONFIN  NONBILL             
+------------------------------------------------------------------------------------------          
+@ CIRRUS                                                                                            
+  CASH WD SAV       40        123,637.00      40        222.54 CR                                   
+  CASH WD DDA        7         26,453.00       7         47.61 CR                                   
+  BALANCE INQ        3              0.00       3          0.75 CR                                   
+  TOTALS            50   0    150,090.00DB      50        270.90 CR                                 
+------------------------------------------------------------------------------------------          
+@ GRAND TOTALS:                                                                                     
+  TOTALS            50   0    150,090.00DB      50        270.16 CR                                 
+                                                                                                    
+1SWCHD363                                                                                           
+MASTERCARD DEBIT SWITCH                                                                             
+DAILY CONTROL REPORT  ACQUIRING PROCESSOR                                                           
+WORK OF: 05/22/22                                        PAGE:  2                                   
+                                                                                                    
+PROCESSOR      : IDFC BANK LIMITED                                                                  
+PROCESSOR ID   : 9000002007                                                                         
+CURRENCY       : 840 U.S. Dollar                                                                    
+SETTLEMENT ICA : 008653                                                                             
+                                                                                                    
+                         DEBITS               CREDITS                                               
+               NUMBER     AMOUNT          NUMBER     AMOUNT                                         
+                                                                                                    
+FINANCIAL                                                                                           
+SETTLEMENT                  0.00              105       157,915.00                                  
+                                                                                                    
+@ EXCEPTION ITEMS                                                                                   
+  SAME DAY (CODE 09)                              0.00                    0.00                      
+  NON-SAME DAY                                    0.00                    0.00                      
+  SETTLEMENT                                      0.00                    0.00                      
+  NON-SAME DAY, NON-FINANCIAL                    0.00                    0.00                       
+                                                                                                    
+→ TOTAL FINANCIAL SETTLEMENT                        157,915.00                                      
+                                                                                                    
+@ TOTAL FEES                                                                                        
+  SETTLEMENT                  0.00                          284.24                                  
+                                                                                                    
+@ INTERCHANGE                                                                                       
+  SETTLEMENT                                                      158,199.24                        
+  - ACCESS CHARGE (ATM SURCHRG)                              0.00                                   
+  - ACCESS CHARGE (POS SURCHRG)                              0.00                                   
+  - ACCESS CHARGE (ATM SUR) REV                              0.00                                   
+  - ACCESS CHARGE (POS SUR) REV                              0.00                                   
+                                                                                                    
+@ SURCHARGE FREE                                                                                    
+                                                                                                    
+1SWCHD363                                                                                           
+MASTERCARD DEBIT SWITCH                                                                             
+DAILY CONTROL REPORT  ISSUING PROCESSOR                                                             
+WORK OF: 05/22/22                                        PAGE:  3                                   
+                                                                                                    
+PROCESSOR      : IDFC BANK LIMITED                                                                  
+PROCESSOR ID   : 9000002007                                                                         
+CURRENCY       : 840 U.S. Dollar                                                                    
+SETTLEMENT ICA : 008653                                                                             
+                                                                                                    
+TRANSACTIONS                                                                                        
+                    FINANCIAL        INTERCHANGE                                                    
+          NUMBER            NUMBER                                                                  
+          APPROVED DENIALS  AMOUNT    TRANS   AMOUNT                                                
+                                             COUNTS  FINANCIAL % BASED  NONFIN  NONBILL             
+------------------------------------------------------------------------------------------          
+@ CIRRUS                                                                                            
+  CASH WD SAV       40        123,637.00      40        222.54 CR                                   
+  CASH WD DDA        7         26,453.00       7         47.61 CR                                   
+  BALANCE INQ        3              0.00       3          0.75 CR                                   
+  TOTALS            50   0    150,090.00DB      50        270.90 CR                                 
+------------------------------------------------------------------------------------------          
+@ GRAND TOTALS:                                                                                     
+  TOTALS            50   0    150,090.00DB      50        270.16 CR                                 
+                                                                                                    
+1SWCHD363                                                                                           
+MASTERCARD DEBIT SWITCH                                                                             
+DAILY CONTROL REPORT  ISSUING PROCESSOR                                                             
+WORK OF: 05/22/22                                        PAGE:  4                                   
+                                                                                                    
+PROCESSOR      : IDFC BANK LIMITED                                                                  
+PROCESSOR ID   : 9000002007                                                                         
+CURRENCY       : 840 U.S. Dollar                                                                    
+SETTLEMENT ICA : 008653                                                                             
+                                                                                                    
+                         DEBITS               CREDITS                                               
+               NUMBER     AMOUNT          NUMBER     AMOUNT                                         
+                                                                                                    
+FINANCIAL                                                                                           
+SETTLEMENT                  0.00              100       150,090.00                                  
+                                                                                                    
+@ EXCEPTION ITEMS                                                                                   
+  SAME DAY (CODE 09)                              0.00                    0.00                      
+  NON-SAME DAY                                    0.00                    0.00                      
+  SETTLEMENT                                      0.00                    0.00                      
+  NON-SAME DAY, NON-FINANCIAL                    0.00                    0.00                       
+                                                                                                    
+→ TOTAL FINANCIAL SETTLEMENT                        150,090.00                                      
+                                                                                                    
+@ TOTAL FEES                                                                                        
+  SETTLEMENT                  0.00                          270.16                                  
+                                                                                                    
+@ INTERCHANGE                                                                                       
+  SETTLEMENT                                                      150,360.16                        
+  - ACCESS CHARGE (ATM SURCHRG)                              0.00                                   
+  - ACCESS CHARGE (POS SURCHRG)                              0.00                                   
+  - ACCESS CHARGE (ATM SUR) REV                              0.00                                   
+  - ACCESS CHARGE (POS SUR) REV                              0.00                                   
+                                                                                                    
+@ SURCHARGE FREE                                                                                    
+                                                                                                    
+1SWCHD363                                                                                           
+MASTERCARD DEBIT SWITCH                                                                             
+DAILY CONTROL REPORT  ISSUING PROCESSOR                                                             
+COUNTRY: 356                                        WORK OF: 05/22/22               PAGE:  8        
+                                                                                                    
+PROCESSOR      : IDFC BANK LIMITED                                                                  
+PROCESSOR ID   : 9000002007                                                                         
+CURRENCY       : 840 U.S. Dollar                                                                    
+SETTLEMENT ICA : 008653                                                                             
+                                                                                                    
+TRANSACTIONS                                                                                        
+                    FINANCIAL        INTERCHANGE                                                    
+          NUMBER            NUMBER                                                                  
+          APPROVED DENIALS  AMOUNT    TRANS   AMOUNT                                                
+                                             COUNTS  FINANCIAL % BASED  NONFIN  NONBILL             
+------------------------------------------------------------------------------------------          
+@ CIRRUS                                                                                            
+  CASH WD SAV       40        123,637.00      40        247.27 CR                                   
+  CASH WD DDA        7         26,453.00       7         52.90 CR                                   
+  BALANCE INQ        3              0.00       3          0.75 CR                                   
+  TOTALS            50   0    150,090.00DB      50        300.92 CR                                 
+------------------------------------------------------------------------------------------          
+@ GRAND TOTALS:                                                                                     
+  TOTALS            50   0    150,090.00DB      50        300.18 CR                                 
+                                                                                                    
+1SWCHD363                                                                                           
+MASTERCARD DEBIT SWITCH                                                                             
+DAILY CONTROL REPORT  ISSUING PROCESSOR                                                             
+COUNTRY: 356                                        WORK OF: 05/22/22               PAGE:  9        
+                                                                                                    
+PROCESSOR      : IDFC BANK LIMITED                                                                  
+PROCESSOR ID   : 9000002007                                                                         
+CURRENCY       : 840 U.S. Dollar                                                                    
+SETTLEMENT ICA : 008653                                                                             
+                                                                                                    
+                         DEBITS               CREDITS                                               
+               NUMBER     AMOUNT          NUMBER     AMOUNT                                         
+                                                                                                    
+FINANCIAL                                                                                           
+SETTLEMENT            105       157,915.00                    0.00                                  
+                                                                                                    
+@ EXCEPTION ITEMS                                                                                   
+  SAME DAY (CODE 89)                              0.00                    0.00                      
+  NON-SAME DAY                                    0.00                    0.00                      
+                                                                                                    
+→ TOTAL FINANCIAL SETTLEMENT                        157,915.00                                      
+                                                                                                    
+@ TOTAL FEES                                                                                        
+  SETTLEMENT                                                        315.83                          
+                                                                                                    
+→ NET DUE TO/FROM MC                                158,230.83                                      
+                                                                                                    
