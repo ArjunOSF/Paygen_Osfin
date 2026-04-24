@@ -137,8 +137,9 @@ def _build_record(txn: Transaction, pos_type: str = "PHYSICAL") -> str:
     merch_ref = f"MERCH{txn.terminal_id[:7]:<7}{'0'*12}"[:24]
     _place(buf, merch_ref, 81, 24)
 
-    # MessageType (pos 197, 4 chars)
-    _place(buf, "0210", 197, 4)
+    # MessageType (pos 197, 4 chars). Reversal (CHANGE 8): 0420 for reversal records.
+    msg_type = "0420" if txn.is_reversal else "0210"
+    _place(buf, msg_type, 197, 4)
 
     # Flag at pos 201 (4 chars) — template has "0073"/"0075". Keep "0075".
     _place(buf, "0075", 201, 4)

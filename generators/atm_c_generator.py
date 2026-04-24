@@ -51,7 +51,8 @@ def _build_record(txn: Transaction, journal_no: int, config: dict, atm_pos_flag:
     _place(buf, txn.rrn,                            57,  12)   # SECONDARY JOIN KEY → MC DE37
     _place(buf, txn.account_no,                     69,  17)
     _place(buf, config.get("tran_code", "020045"),  86,   6)
-    _place(buf, "D",                                92,   1)   # CR_DR = Debit
+    # Reversal (CHANGE 8): CR_DR = C (credit back) for reversal records
+    _place(buf, "C" if txn.is_reversal else "D",    92,   1)   # CR_DR
     _place(buf, str(txn.amount).rjust(18, "0"),     93,  18)   # right-aligned paise
     _place(buf, txn.terminal_id,                   111,  16)   # STATION_ID = terminal
     narrative = f"ATM TXN {txn.seq_no} {txn.approval_code}"

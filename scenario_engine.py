@@ -159,6 +159,78 @@ def build_exact_match_config() -> LayerConfig:
     return LayerConfig(switch=PASS, cbs=PASS, network=PASS, ej=PASS)
 
 
+# ---------------------------------------------------------------------------
+# Reversal / refund support (CHANGE 8)
+#
+# Chargebacks (T+45) are OUT OF SCOPE. TODO: extend to chargeback flow later.
+# ---------------------------------------------------------------------------
+
+SAME_DAY = "same"
+NEXT_DAY = "next"
+
+FULL_AMOUNT    = "full"
+PARTIAL_AMOUNT = "partial"
+
+
+def build_reversal_pairs(
+    originals: List[Transaction],
+    reversal_type: str = SAME_DAY,       # "same" | "next"
+    amount_mode: str = FULL_AMOUNT,      # "full" | "partial"
+    partial_amount: int = 0,             # paise — when amount_mode == "partial"
+) -> List[Transaction]:
+    """
+    For each original transaction, return a paired reversal Transaction.
+    The reversal keeps the original seq_no/rrn in `original_seq_no`/`original_rrn`
+    so generators can emit linking fields (MC DE37, Visa ARN, etc.).
+
+    Returns a list of reversal Transactions only (not originals).
+    The caller is responsible for concatenating [originals + reversals] before
+    passing to generators for same-day, or for splitting across two days for
+    next-day reversal.
+    """
+    reversals: List[Transaction] = []
+    day_offset = 1 if reversal_type == NEXT_DAY else 0
+
+    for orig in originals:
+        rev_amount = orig.amount if amount_mode == FULL_AMOUNT else max(0, partial_amount)
+        rev = Transaction(
+            pan=orig.pan,
+            # New seq_no/rrn for the reversal record itself
+            seq_no=_bump(orig.seq_no),
+            rrn=_bump(orig.rrn),
+            amount=rev_amount,
+            terminal_id=orig.terminal_id,
+            date_yymmdd=orig.date_yymmdd,        # adjusted below if next-day
+            date_ddmmyyyy=orig.date_ddmmyyyy,
+            time_hhmmss=orig.time_hhmmss,
+            approval_code=orig.approval_code,
+            mcc=orig.mcc,
+            network=orig.network,
+            account_no=orig.account_no,
+            in_switch=orig.in_switch,
+            in_cbs=orig.in_cbs,
+            in_network=orig.in_network,
+            in_ej=False,                         # no cash dispensed on reversal
+            ej_success=False,
+            switch_status=orig.switch_status,
+            is_reversal=True,
+            original_seq_no=orig.seq_no,
+            original_rrn=orig.rrn,
+            reversal_day_offset=day_offset,
+        )
+        reversals.append(rev)
+    return reversals
+
+
+def _bump(numeric_str: str) -> str:
+    """Increment a zero-padded numeric string by 1, preserving length."""
+    try:
+        width = len(numeric_str)
+        return str(int(numeric_str) + 1).zfill(width)
+    except ValueError:
+        return numeric_str
+
+
 def prompt_custom_config(channel: str, role: str, has_network: bool) -> LayerConfig:
     """Interactive prompt for custom layer pass/fail/missing."""
     channel = channel.upper()

@@ -298,7 +298,15 @@ def _txn_1240_block(
             line += f" ({desc})"
         pds_ann.append(line)
 
-    return _format_message_block(msg_num, msg_offset, MTI_FIRST_PRESENT, des, entries, pds_ann)
+    # Reversal (CHANGE 8): MTI 1420 + DE24=400 for reversal records
+    mti_used = "1420" if txn.is_reversal else MTI_FIRST_PRESENT
+    if txn.is_reversal:
+        # Flip DE24 from 200 (1st presentment) to 400 (reversal)
+        entries = [
+            (de_num, foff, "400") if de_num == 24 else (de_num, foff, value)
+            for (de_num, foff, value) in entries
+        ]
+    return _format_message_block(msg_num, msg_offset, mti_used, des, entries, pds_ann)
 
 
 def _financial_position_block(

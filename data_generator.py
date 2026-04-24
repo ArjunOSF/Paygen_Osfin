@@ -79,6 +79,12 @@ class Transaction:
     ej_success: bool = True
     switch_status: str = "00"   # "00"=success, "57"=fail in TLF/PTLF authx.Status
 
+    # Reversal fields (CHANGE 8)
+    is_reversal: bool = False          # True → this record is a reversal/refund
+    original_seq_no: str = ""          # SEQ_NO of the original txn being reversed
+    original_rrn: str = ""             # RRN of the original txn being reversed
+    reversal_day_offset: int = 0       # 0=same-day, 1=next-day (T+1)
+
 
 # ---------------------------------------------------------------------------
 # Batch generator

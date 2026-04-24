@@ -286,11 +286,25 @@ def run_single(validate: bool = False) -> None:
         network = prompt("3. Network?", ["MC", "Visa", "RuPay", "NFS"], default="MC")
 
     # 4. Scenario
-    scenario_type = prompt("4. Scenario?", ["Exact Match", "Custom"], default="Exact Match")
+    scenario_type = prompt("4. Scenario?", ["Exact Match", "Custom", "Reversal"], default="Exact Match")
     has_network = network is not None
+    reversal_type   = None
+    reversal_amount = None
+    partial_paise   = 0
     if scenario_type.upper().startswith("E"):
         layer_cfg = build_exact_match_config()
         print(f"\n  → All layers: PASS (exact match)")
+    elif scenario_type.upper().startswith("R"):
+        # Reversal scenario: originals pass, reversals paired to each
+        layer_cfg = build_exact_match_config()
+        rev_choice = prompt("   Reversal type?", ["Same day", "Next day"], default="Same day")
+        reversal_type = "next" if rev_choice.upper().startswith("N") else "same"
+        amt_choice = prompt("   Reversal amount?", ["Full", "Partial"], default="Full")
+        reversal_amount = "partial" if amt_choice.upper().startswith("P") else "full"
+        if reversal_amount == "partial":
+            partial_rs = prompt_int("   Partial amount in rupees?", default=100, min_val=1)
+            partial_paise = partial_rs * 100
+        print(f"\n  → Reversal: {reversal_type}-day, {reversal_amount} amount")
     else:
         layer_cfg = prompt_custom_config(channel, role, has_network)
 
@@ -330,14 +344,54 @@ def run_single(validate: bool = False) -> None:
     tag = f"{date_str}_{channel.upper()}_{role.upper()}_{net_str}"
     if channel.upper() == "POS" and pos_type == "ECOM":
         tag += "_ECOM"
-    out_dir = make_output_dir(output_base, tag)
 
-    print(f"\n  Output dir: {out_dir}\n")
+    # Reversal branch (CHANGE 8)
+    if reversal_type is not None:
+        from scenario_engine import build_reversal_pairs
+        reversals = build_reversal_pairs(
+            transactions,
+            reversal_type="next" if reversal_type == "next" else "same",
+            amount_mode=reversal_amount,
+            partial_amount=partial_paise,
+        )
+        if reversal_type == "same":
+            # Same-day: originals + reversals in one file set
+            combined = transactions + reversals
+            out_dir = make_output_dir(output_base, tag + "_REVERSAL_SAMEDAY")
+            print(f"\n  Output dir: {out_dir} (originals + reversals)\n")
+            files_written = run_generators(
+                combined, file_set, config, out_dir,
+                date_str, channel, role, network, pos_type, atm_vendor,
+            )
+        else:
+            # Next-day: two folders, day1 = originals, day2 = reversals
+            d1 = datetime.strptime(date_str, "%Y%m%d")
+            d2_str = (d1.replace(day=d1.day) if False else d1).strftime("%Y%m%d")
+            # Compute next calendar day
+            from datetime import timedelta
+            d2_str = (d1 + timedelta(days=1)).strftime("%Y%m%d")
+            # Reversals use next-day date
+            for r in reversals:
+                r.date_yymmdd   = d2_str[2:]
+                r.date_ddmmyyyy = d2_str[6:8] + d2_str[4:6] + d2_str[:4]
+            out_dir_d1 = make_output_dir(output_base, tag + "_REVERSAL_D1")
+            out_dir_d2 = make_output_dir(output_base, tag + "_REVERSAL_D2")
+            print(f"\n  Day 1 dir: {out_dir_d1}")
+            print(f"  Day 2 dir: {out_dir_d2}\n")
+            fw1 = run_generators(transactions, file_set, config, out_dir_d1,
+                                 date_str, channel, role, network, pos_type, atm_vendor)
+            fw2 = run_generators(reversals,    file_set, config, out_dir_d2,
+                                 d2_str,    channel, role, network, pos_type, atm_vendor)
+            out_dir       = out_dir_d1    # primary dir for summary/zip
+            files_written = {**fw1, **{f"D2:{k}": v for k, v in fw2.items()}}
+    else:
+        out_dir = make_output_dir(output_base, tag)
+        print(f"\n  Output dir: {out_dir}\n")
 
-    files_written = run_generators(
-        transactions, file_set, config, out_dir,
-        date_str, channel, role, network, pos_type, atm_vendor,
-    )
+        files_written = run_generators(
+            transactions, file_set, config, out_dir,
+            date_str, channel, role, network, pos_type, atm_vendor,
+        )
 
     write_summary(
         output_dir=out_dir,

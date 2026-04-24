@@ -72,7 +72,8 @@ def _build_record(txn: Transaction, config: dict) -> str:
     _place(buf, config.get("region_id",  "0001"), 83,  4)
 
     # authx (89–573)
-    msg_type = "0210" if txn.switch_status == "00" else "0210"  # always 0210 for auth response
+    # Reversal (CHANGE 8): MTI 0420 for reversal records, 0210 otherwise
+    msg_type = "0420" if txn.is_reversal else "0210"
     _place(buf, msg_type,                  91,  4)   # MessageType
     _place(buf, txn.switch_status,         95,  2)   # Status
     _place(buf, txn.date_yymmdd,          156,  6)   # TranDate YYMMDD
@@ -88,8 +89,12 @@ def _build_record(txn: Transaction, config: dict) -> str:
     _place(buf, amt_str,                  294, 19)   # Amt2
     resp = txn.switch_status  # "00" or "57"
     _place(buf, resp,                     344,  2)   # RespCode
-    # OriginalSeqNum at 411 — space for non-reversals
-    _place(buf, "00",                     483,  2)   # ReversalReason (non-reversal)
+    # Reversal (CHANGE 8): OriginalSeqNum at pos 411 links to original txn's SEQ_NO
+    if txn.is_reversal and txn.original_seq_no:
+        _place(buf, txn.original_seq_no,  411, 12)
+        _place(buf, "01",                 483,  2)   # ReversalReason "01"=cust cancellation
+    else:
+        _place(buf, "00",                 483,  2)   # ReversalReason (non-reversal)
     _place(buf, txn.approval_code,        503,  6)   # AuthIDResp → ATM_C.RR_NO
     _place(buf, "1",                      509,  1)   # RefreshImpactInd
 
