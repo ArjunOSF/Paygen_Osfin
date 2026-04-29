@@ -98,6 +98,10 @@ class Txn:
     has_chip: bool = True
     has_supplemental: bool = False
     test_case: str = "random"
+    # PROMPT 7 FIX: original-txn linking + reversal date offset
+    original_arn: str = ""        # for TC25/TC27 — links to original TC05/TC07
+    original_date: str = ""       # for reversals — MMDD of original txn
+    reversal_offset_days: int = 0 # if >0, this txn's purchase_date = orig_date + offset
 
 
 # ---------------------------------------------------------------------------
@@ -198,9 +202,17 @@ def build_records_for_txn(t: Txn) -> List[str]:
         out.append(_apply_addendum("0705", t))
         out.append(_apply_addendum("0707", t))
     elif t.tc_kind == "TC25":
+        # PROMPT 7 FIX: TC25 (purchase reversal) bundle is TCR0 + TCR1 + TCR5
+        # — links to original purchase via ARN; reversal date != original date.
         out.append(_apply_tcr0("2500", t))
+        out.append(_apply_addendum("0501", t))
+        out.append(_apply_addendum("0505", t))
     elif t.tc_kind == "TC27":
+        # PROMPT 7 FIX: TC27 (ATM cash reversal) bundle is TCR0 + TCR1 + TCR5
+        # — links to original TC07 via ARN; uses next-day reversal date.
         out.append(_apply_tcr0("2700", t))
+        out.append(_apply_addendum("0701", t))
+        out.append(_apply_addendum("0705", t))
     return out
 
 
@@ -305,12 +317,37 @@ def generate(num_txns: int, business_date: str,
              test_case: str = "random",
              member_id: str = "401561",
              currency: str = "INR",
+             reversal_offset_days: int = 1,
              seed: Optional[int] = None,
              validate: bool = True) -> Tuple[List[Txn], List[str]]:
     rng = random.Random(seed if seed is not None else int(datetime.now().timestamp()))
     ccy_num = {"INR": "356", "USD": "840", "EUR": "978"}.get(currency.upper(), "356")
 
     txns: List[Txn] = [_make_txn(i, test_case, business_date, ccy_num, rng) for i in range(num_txns)]
+
+    # PROMPT 7 FIX: link reversals to original txns + apply date offset
+    # TC25 reversals → link to a TC05 by ARN; TC27 → TC07. Reversal date = orig + N days.
+    from datetime import timedelta as _td
+    base_date = datetime.strptime(business_date, "%Y%m%d")
+    candidates_05 = [t for t in txns if t.tc_kind == "TC05" and not t.is_reversal]
+    candidates_07 = [t for t in txns if t.tc_kind == "TC07" and not t.is_reversal]
+    for t in txns:
+        if t.tc_kind == "TC25" and candidates_05:
+            src = rng.choice(candidates_05)
+            t.original_arn = src.arn
+            t.original_date = src.purchase_date
+            t.arn = src.arn   # reversal carries SAME ARN as original
+            new_date = base_date + _td(days=reversal_offset_days)
+            t.purchase_date = new_date.strftime("%m%d")
+            t.reversal_offset_days = reversal_offset_days
+        elif t.tc_kind == "TC27" and candidates_07:
+            src = rng.choice(candidates_07)
+            t.original_arn = src.arn
+            t.original_date = src.purchase_date
+            t.arn = src.arn
+            new_date = base_date + _td(days=reversal_offset_days)
+            t.purchase_date = new_date.strftime("%m%d")
+            t.reversal_offset_days = reversal_offset_days
 
     # Build records
     records: List[str] = []
@@ -340,12 +377,15 @@ def write_outputs(txns: List[Txn], records: List[str], out_path: str,
         w = csv.writer(f)
         w.writerow(["arn", "pan_masked", "tc_kind", "purchase_date", "amount_paise",
                     "mcc", "merchant_name", "city", "country", "auth_code",
-                    "pos_entry", "is_reversal", "test_case"])
+                    "pos_entry", "is_reversal", "original_arn", "original_date",
+                    "reversal_offset_days", "test_case"])
         for t in txns:
             pan_m = t.pan[:6] + "X" * 6 + t.pan[-4:]
             w.writerow([t.arn, pan_m, t.tc_kind, t.purchase_date, t.amount_paise,
                         t.mcc, t.merchant_name, t.merchant_city, t.merchant_country,
-                        t.auth_code, t.pos_entry, t.is_reversal, t.test_case])
+                        t.auth_code, t.pos_entry, t.is_reversal,
+                        t.original_arn, t.original_date, t.reversal_offset_days,
+                        t.test_case])
 
     tcr_counts = _counter([r[:4] for r in records])
     totals = {
@@ -383,6 +423,8 @@ def main(argv=None) -> int:
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--random", action="store_true")
     p.add_argument("--validate", action="store_true", default=True)
+    p.add_argument("--reversal-offset", type=int, default=1,
+                   help="days after original txn for TC25/TC27 reversal date (default 1)")
     p.add_argument("--output", default="epin.txt")
     args = p.parse_args(argv)
 
@@ -391,7 +433,7 @@ def main(argv=None) -> int:
         print(f"error: {e}", file=sys.stderr); return 2
 
     txns, records = generate(args.num_txns, bdate, args.testcase, args.member_id,
-                             args.currency, args.seed, args.validate)
+                             args.currency, args.reversal_offset, args.seed, args.validate)
     write_outputs(txns, records, args.output, bdate, args.currency)
     print(f"  wrote {len(txns)} txns, {len(records)} records → {args.output}")
     print(f"  master table → {os.path.splitext(args.output)[0]}_master_table.csv")
