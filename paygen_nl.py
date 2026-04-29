@@ -459,22 +459,48 @@ def format_summary(cfg: ParsedConfig, plan: List[Tuple[str, List[str], str]]) ->
     return f"Understood → {files}\n             {line1}"
 
 
-def run_plan(plan: List[Tuple[str, List[str], str]], dry_run: bool = False) -> int:
+def _zip_and_deliver(out_dir: Path) -> Optional[Path]:
+    """Zip the generated output dir and drop it in ~/Downloads/. Reveal in Finder on macOS."""
+    import zipfile, platform
+    if not out_dir.exists() or not any(out_dir.iterdir()):
+        return None
+    downloads = Path.home() / "Downloads"
+    downloads.mkdir(exist_ok=True)
+    ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_path = downloads / f"{out_dir.name}_{ts}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in out_dir.rglob("*"):
+            if f.is_file():
+                zf.write(f, arcname=f.relative_to(out_dir.parent))
+    # Reveal in Finder on macOS
+    if platform.system() == "Darwin":
+        try:
+            subprocess.run(["open", "--reveal", str(zip_path)], check=False, timeout=5)
+        except Exception:
+            pass
+    return zip_path
+
+
+def run_plan(plan: List[Tuple[str, List[str], str]], dry_run: bool = False,
+             auto_download: bool = True) -> int:
     if not plan:
         print("  Nothing to generate.")
         return 0
     print()
     rc = 0
+    out_dirs: set = set()
     for script, args, label in plan:
         path = GEN_DIR / script
         if not path.exists():
             print(f"  [skip] {label} — generator not found: {path.name}")
             continue
         cmd = [sys.executable, str(path)] + args
-        # Ensure output dir exists
+        # Ensure output dir exists + track it for zipping
         for i, a in enumerate(args):
             if a == "--output" and i + 1 < len(args):
-                Path(args[i + 1]).parent.mkdir(parents=True, exist_ok=True)
+                p = Path(args[i + 1])
+                p.parent.mkdir(parents=True, exist_ok=True)
+                out_dirs.add(p.parent.resolve())
         print(f"  [run]  {label}")
         print(f"         $ {' '.join(shlex.quote(c) for c in cmd)}")
         if dry_run:
@@ -486,6 +512,13 @@ def run_plan(plan: List[Tuple[str, List[str], str]], dry_run: bool = False) -> i
         else:
             for ln in result.stdout.strip().splitlines():
                 print(f"         {ln}")
+
+    # Auto-download — zip output dirs and drop in ~/Downloads/
+    if not dry_run and auto_download and rc == 0:
+        for od in sorted(out_dirs):
+            zip_path = _zip_and_deliver(od)
+            if zip_path:
+                print(f"\n  📦 Downloaded → {zip_path}")
     return rc
 
 
@@ -501,7 +534,8 @@ EXAMPLES = [
 ]
 
 
-def interactive(initial_prompt: str = "", dry_run: bool = False) -> int:
+def interactive(initial_prompt: str = "", dry_run: bool = False,
+                auto_download: bool = True) -> int:
     print("PayGen NL — describe what files you need.")
     print("Type 'quit' to exit; 'examples' to see prompt samples.\n")
 
@@ -550,7 +584,7 @@ def interactive(initial_prompt: str = "", dry_run: bool = False) -> int:
         except (EOFError, KeyboardInterrupt):
             print(); return 0
         if ans in ("", "y", "yes"):
-            return run_plan(plan, dry_run=dry_run)
+            return run_plan(plan, dry_run=dry_run, auto_download=auto_download)
         elif ans in ("edit", "e"):
             cfg = None; prompt = ""; continue
         else:
@@ -565,6 +599,8 @@ def main(argv=None) -> int:
                    help="show resolved plan but don't run generators")
     p.add_argument("--json", action="store_true",
                    help="emit parsed config as JSON and exit")
+    p.add_argument("--no-download", action="store_true",
+                   help="don't auto-zip and copy to ~/Downloads/ (default: do)")
     args = p.parse_args(argv)
 
     if args.json:
@@ -587,7 +623,8 @@ def main(argv=None) -> int:
         }, indent=2))
         return 0
 
-    return interactive(args.prompt, dry_run=args.dry_run)
+    return interactive(args.prompt, dry_run=args.dry_run,
+                       auto_download=not args.no_download)
 
 
 if __name__ == "__main__":
