@@ -64,9 +64,10 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 GL_ACCOUNTS = {
-    "ATM": ("0000098094102017", "VISA ATM PAYABLE A/C",      "CR"),
-    "POS": ("0000098095102016", "VISA POS PAYABLE A/C",      "CR"),
-    "ACQ": ("0000098106102018", "VISA ACQUIRING RECEIVABLE", "DR"),
+    "ATM": ("0000098094102017", "VISA ATM PAYABLE A/C",              "CR"),
+    "POS": ("0000098095102016", "VISA POS PAYABLE A/C",              "CR"),
+    "ACQ": ("0000098106102018", "VISA ACQUIRING RECEIVABLE",         "DR"),
+    "NFS": ("0000098133102016", "NFS ISSUING PAYABLE-ATM/MATM BGL",  "CR"),
 }
 
 # Real-file ratios (rounded). Generator uses these by default; --testcase can shift.
@@ -228,13 +229,16 @@ def generate(num_txns: int, business_date: str, network: str = "VISA",
     rng = random.Random(seed if seed is not None else int(datetime.now().timestamp()))
     rrn_start = rng.randint(600_000_000_000, 699_999_999_999)
 
-    # Distribute records across the 3 GLs per ratios
-    gl_choices = rng.choices(
-        ["POS", "ACQ", "ATM"],
-        weights=[DEFAULT_GL_RATIOS["POS"], DEFAULT_GL_RATIOS["ACQ"],
-                 DEFAULT_GL_RATIOS["ATM"]],
-        k=num_txns,
-    )
+    # NFS issuer recon: single GL (98133102016), all CWDR/CWRR
+    if network.upper() == "NFS":
+        gl_choices = ["NFS"] * num_txns
+    else:
+        gl_choices = rng.choices(
+            ["POS", "ACQ", "ATM"],
+            weights=[DEFAULT_GL_RATIOS["POS"], DEFAULT_GL_RATIOS["ACQ"],
+                     DEFAULT_GL_RATIOS["ATM"]],
+            k=num_txns,
+        )
 
     records: List[GlRec] = []
     for i in range(num_txns):
@@ -246,17 +250,21 @@ def generate(num_txns: int, business_date: str, network: str = "VISA",
     for r in records:
         for key, (acct, _, _) in GL_ACCOUNTS.items():
             if r.gl_account == acct:
-                # Net amount: DR adds, CR subtracts (for net DR-direction GLs);
-                # for CR-direction GLs (ATM/POS PAYABLE), CR adds, DR subtracts.
-                _, _, gl_dir = GL_ACCOUNTS[key]
-                signed = r.amount_paise if r.dr_cr == gl_dir else -r.amount_paise
-                totals[key] += signed
+                if network.upper() == "NFS":
+                    # NFS spec: header total = sum of all detail amounts (no netting)
+                    totals[key] += r.amount_paise
+                else:
+                    _, _, gl_dir = GL_ACCOUNTS[key]
+                    signed = r.amount_paise if r.dr_cr == gl_dir else -r.amount_paise
+                    totals[key] += signed
                 break
 
-    # Build output: 3 headers + all detail records
+    # Build output: only headers for GLs that received records
     date_ddmmyyyy = _ddmmyyyy(business_date)
     output_lines: List[str] = []
-    for key, (acct, desc, dr_cr) in GL_ACCOUNTS.items():
+    active_gls = ["NFS"] if network.upper() == "NFS" else ["ATM", "POS", "ACQ"]
+    for key in active_gls:
+        acct, desc, dr_cr = GL_ACCOUNTS[key]
         net_total = abs(totals[key])
         output_lines.append(format_header(date_ddmmyyyy, acct, desc, net_total, dr_cr))
 

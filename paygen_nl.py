@@ -111,6 +111,8 @@ class ParsedConfig:
     # tuples: (scenario_kind, count, on_date_yyyymmdd or None)
     currency: str = "INR"
     institution: str = ""
+    mcc: Optional[str] = None      # NFS only: "6011" / "6012" / "6013" (ICCW)
+    late_reversal: bool = False    # adds verifireversal_generator
     raw_prompt: str = ""
     errors: List[str] = field(default_factory=list)
     questions: List[str] = field(default_factory=list)
@@ -277,6 +279,17 @@ def parse(prompt: str) -> ParsedConfig:
     cfg.scenarios   = _parse_scenarios(prompt)
     cfg.institution = _parse_institution(prompt)
 
+    # NFS MCC detection
+    p = prompt.lower()
+    if re.search(r'\biccw\b|6013|careless', p):
+        cfg.mcc = "6013"
+    elif re.search(r'micro[- ]?atm|matm|6012', p):
+        cfg.mcc = "6012"
+    elif "NFS" in cfg.networks:
+        cfg.mcc = "6011"
+    if re.search(r'late reversal|verifireversal|resp[\s_]?(28|50)', p):
+        cfg.late_reversal = True
+
     # Defaults per prompt spec
     if cfg.role is None and (cfg.count or cfg.networks):
         cfg.role = "ACQUIRING"
@@ -356,6 +369,7 @@ _SCRIPT_FLAGS = {
     "fss_gl_out_generator.py": {"--num-txns","--date","--testcase","--seed","--output","--network","--random"},
     # ── NFS ──
     "fig_b2c_generator.py":      {"--num-txns","--date","--seed","--output","--validate","--random"},
+    "issrpidf_generator.py":     {"--num-txns","--date","--seed","--output","--mcc"},
     "ntsl_generator.py":         {"--date","--seed","--output","--bank-name","--random"},
     "nfs_adjustment_generator.py": {"--num-txns","--date","--seed","--output","--random"},
     "verifireversal_generator.py": {"--num-txns","--date","--seed","--output","--random"},
@@ -462,10 +476,20 @@ ROUTING_TABLE = {
         ("ep747_generator.py",       [],                            "EP747 (VSS bundle)",     "txt"),
     ],
 
-    # ───── NFS (channel-flexible: AEPS / Micro-ATM / etc.) ─────
+    # ───── NFS Issuer recon (MCC 6011 / 6012) ─────
     ("NFS", None, None): [
-        ("fig_b2c_generator.py",     [],                            "FIG B2C TRAXN",          "csv"),
+        ("issrpidf_generator.py",    ["--mcc", "6011"],             "ISSRPIDF (NPCI MCC 6011)","txt"),
+        ("tlf_generator.py",         [],                            "TLF (NFS switch — PRO2)","txt"),
         ("cbs_generator.py",         ["--network", "NFS"],          "CBS (NFS)",              "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "NFS"],          "FSS GL OUT (NFS)",       "txt"),
+        ("ntsl_generator.py",        [],                            "NTSL Daily Settlement",  "xlsx"),
+    ],
+    # ───── NFS ICCW Issuer recon (MCC 6013 — dual RRN) ─────
+    ("NFS", None, "ICCW"): [
+        ("issrpidf_generator.py",    ["--mcc", "6013"],             "ISSRPIDF (NPCI MCC 6013 ICCW)","txt"),
+        ("tlf_generator.py",         [],                            "TLF (NFS UPI_ICCW switch)","txt"),
+        ("cbs_generator.py",         ["--network", "NFS"],          "CBS (NFS)",              "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "NFS"],          "FSS GL OUT (NFS)",       "txt"),
         ("ntsl_generator.py",        [],                            "NTSL Daily Settlement",  "xlsx"),
     ],
 
@@ -490,6 +514,7 @@ def _lookup_recipe(net: str, channel: Optional[str], role: Optional[str]):
     → channel-wildcard → both-wildcard. Returns None if no match."""
     for key in [(net, channel, role),
                 (net, channel, None),
+                (net, None,    role),
                 (net, None,    None)]:
         if key in ROUTING_TABLE:
             return ROUTING_TABLE[key]
@@ -537,7 +562,7 @@ def _validate_plan(plan, cfg, per_net):
         assert "fss_gl_out_generator.py" in all_scripts, "MC/Visa routes must include FSS GL OUT"
         assert "cbs_generator.py"        in all_scripts, "All routes must include CBS"
     if "NFS" in cfg.networks:
-        assert "fig_b2c_generator.py"    in all_scripts, "NFS must include FIG B2C"
+        assert "issrpidf_generator.py"   in all_scripts, "NFS must include ISSRPIDF (NPCI raw)"
         assert "mc_t112_generator.py"    not in all_scripts, "NFS must NOT include T112"
         assert "epin_generator.py"       not in all_scripts, "NFS must NOT include EPIN"
     if "RUPAY" in cfg.networks:
@@ -609,7 +634,11 @@ def resolve_files(cfg: ParsedConfig) -> List[Tuple[str, List[str], str]]:
     # ── Build base file list per network from routing table ─────────────
     for net, count in per_net.items():
         if count <= 0: continue
-        recipe = _lookup_recipe(net, channel_lookup, role)
+        # NFS ICCW (MCC 6013) is a separate route keyed on a virtual "ICCW" role
+        if net == "NFS" and cfg.mcc == "6013":
+            recipe = _lookup_recipe(net, channel_lookup, "ICCW")
+        else:
+            recipe = _lookup_recipe(net, channel_lookup, role)
         if recipe is None:
             raise ValueError(f"No routing for ({net}, {channel}, {role}). "
                              f"Add an entry to ROUTING_TABLE.")
@@ -630,10 +659,10 @@ def resolve_files(cfg: ParsedConfig) -> List[Tuple[str, List[str], str]]:
             _add("nfs_adjustment_generator.py",
                  nfs_common + ["--output", f"out_{date}/nfs_adjustment.xlsx"],
                  "NFS Adjustment Report (dispute)")
-        if has_late_reversal or has_reversal:
+        if has_late_reversal or has_reversal or cfg.late_reversal:
             _add("verifireversal_generator.py",
                  nfs_common + ["--output", f"out_{date}/nfs_verifireversal.xlsx"],
-                 "NFS VeriFireversal (late reversal)")
+                 "NFS VeriFireversal (late reversal — Resp 28/50)")
 
     # ── Validate the resolved plan against spec assertions ──────────────
     _validate_plan(plan, cfg, per_net)

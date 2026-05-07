@@ -55,6 +55,7 @@ class VeriRow:
     atm_id: str
     settle_date: str
     request_amt: int
+    resp_code: str = "28"
 
 
 def _normalize_date(s: str) -> str:
@@ -89,7 +90,7 @@ def _make_row(idx: int, business_date: str, rng: random.Random,
         stan_no=str(stan_start + idx).zfill(8),
         pan=pan,
         acq=rng.choice(ACQ_BANKS),
-        iss=rng.choice(ISS_BANKS),
+        iss="IDF",   # Issuer recon: column G must be IDF
         txn_date=_ddmmyyyy(business_date),
         txn_time=f"{rng.randint(0,23):02d}:{rng.randint(0,59):02d}:{rng.randint(0,59):02d}",
         atm_id=rng.choice([f"T{rng.randint(1000000, 9999999)}",
@@ -98,13 +99,14 @@ def _make_row(idx: int, business_date: str, rng: random.Random,
                             f"{rng.randint(10000000, 99999999)}"]),
         settle_date=_ddmmyyyy(business_date),
         request_amt=rng.choice([200, 500, 1000, 2000, 3000, 5000, 10000, 20000]),
+        resp_code=rng.choice(["28", "50"]),   # 28=late reversal, 50=NFS spec addition
     )
 
 
 def _to_excel_row(r: VeriRow) -> List:
     return [
         "'04",                # TransType
-        "'28",                # Resp_Code
+        f"'{r.resp_code}",    # Resp_Code (28 or 50)
         f"'{r.pan}",           # Cardno (text-preserving)
         r.rrn,                 # RRN
         r.stan_no,             # StanNo

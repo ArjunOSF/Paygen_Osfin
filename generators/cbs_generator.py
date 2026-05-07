@@ -134,7 +134,15 @@ def _make_txn(idx: int, case: str, business_date: str, network: str,
     dr_cr = "D"
     issuer = "I"
 
-    if case == "atm_mix":
+    # NFS Issuer recon scope: only CWDR (withdrawal) + CWRR (reversal)
+    if network == "NFS":
+        r = rng.random()
+        if r < 0.05:
+            tran_type = "CWRR"; dr_cr = "C"
+        else:
+            tran_type = "CWDR"; dr_cr = "D"
+        issuer = "I"
+    elif case == "atm_mix":
         # Mix of ATM and POS
         choice = rng.choices(
             ["PRDR", "OWDR", "CWDR"],
