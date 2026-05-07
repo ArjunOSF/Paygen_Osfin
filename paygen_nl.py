@@ -404,14 +404,14 @@ ROUTING_TABLE = {
     # ───── Mastercard ─────
     ("MC", "POS", "ACQUIRING"): [
         ("mc_t112_generator.py",     [],                            "T112 (MC IPM)",          "txt"),
-        ("tlf_generator.py",         [],                            "TLF (MC switch)",        "txt"),
+        ("ptlf_generator_v2.py",     [],                            "PTLF (MC POS switch)",   "txt"),
         ("cbs_generator.py",         ["--network", "MC"],           "CBS (MC)",               "txt"),
         ("fss_gl_out_generator.py",  ["--network", "MC"],           "FSS GL OUT (MC)",        "txt"),
         ("mc_t140_generator.py",     [],                            "T140 (MC settlement)",   "txt"),
     ],
     ("MC", "POS", "ISSUING"): [
         ("mc_t112_generator.py",     [],                            "T112 (MC IPM)",          "txt"),
-        ("tlf_generator.py",         [],                            "TLF (MC switch)",        "txt"),
+        ("ptlf_generator_v2.py",     [],                            "PTLF (MC POS switch)",   "txt"),
         ("cbs_generator.py",         ["--network", "MC"],           "CBS (MC)",               "txt"),
         ("fss_gl_out_generator.py",  ["--network", "MC"],           "FSS GL OUT (MC)",        "txt"),
         ("mc_t140_generator.py",     [],                            "T140 (MC settlement)",   "txt"),
@@ -421,17 +421,15 @@ ROUTING_TABLE = {
         ("tlf_generator.py",         [],                            "TLF (MC switch)",        "txt"),
         ("cbs_generator.py",         ["--network", "MC"],           "CBS (MC)",               "txt"),
         ("fss_gl_out_generator.py",  ["--network", "MC"],           "FSS GL OUT (MC)",        "txt"),
-        ("mc_t140_generator.py",     [],                            "T140 (MC settlement)",   "txt"),
         ("mci_ar_generator.py",      [],                            "T057 (MCI.AR DCR — ACQ)","txt"),
         ("t461_generator.py",        ["--side", "ACQ"],             "T461 (hourly perf — ACQ)","txt"),
     ],
     ("MC", "ATM", "ISSUING"): [
-        # Issuing ATM has NO T057 / NO T461 (acquiring-only reports)
         ("t464_generator_v2.py",     [],                            "T464 (MC ATM)",          "txt"),
         ("tlf_generator.py",         [],                            "TLF (MC switch)",        "txt"),
         ("cbs_generator.py",         ["--network", "MC"],           "CBS (MC)",               "txt"),
         ("fss_gl_out_generator.py",  ["--network", "MC"],           "FSS GL OUT (MC)",        "txt"),
-        ("mc_t140_generator.py",     [],                            "T140 (MC settlement)",   "txt"),
+        ("t461_generator.py",        ["--side", "ISS"],             "T461 (hourly perf — ISS)","txt"),
     ],
 
     # ───── Visa ─────
@@ -474,11 +472,13 @@ ROUTING_TABLE = {
     # ───── RuPay ─────
     ("RUPAY", "POS", None): [
         ("rupay_88_generator.py",    ["--category", "P"],           "RuPay 88 (XML)",         "xml"),
+        ("ptlf_generator_v2.py",     [],                            "PTLF (RuPay POS switch)","txt"),
         ("cbs_generator.py",         ["--network", "RUPAY"],        "CBS (RuPay)",            "txt"),
         ("rupay_dsr_generator.py",   [],                            "RuPay DSR",              "xlsx"),
     ],
     ("RUPAY", "ATM", None): [
         ("rupay_88_generator.py",    ["--category", "A"],           "RuPay 88 (XML)",         "xml"),
+        ("tlf_generator.py",         [],                            "TLF (RuPay ATM switch)", "txt"),
         ("cbs_generator.py",         ["--network", "RUPAY"],        "CBS (RuPay)",            "txt"),
         ("rupay_dsr_generator.py",   [],                            "RuPay DSR",              "xlsx"),
     ],
@@ -509,9 +509,18 @@ def _validate_plan(plan, cfg, per_net):
     if "MC" in cfg.networks and channel == "ATM" and role == "ACQUIRING":
         assert "mci_ar_generator.py" in all_scripts, "MC ATM acquiring must include T057 (mci_ar)"
         assert "t461_generator.py"   in all_scripts, "MC ATM acquiring must include T461"
+        assert "mc_t140_generator.py" not in all_scripts, "MC ATM acquiring must NOT include T140"
     if "MC" in cfg.networks and channel == "ATM" and role == "ISSUING":
         assert "mci_ar_generator.py" not in all_scripts, "MC ATM issuing must NOT include T057"
-        assert "t461_generator.py"   not in all_scripts, "MC ATM issuing must NOT include T461"
+        assert "t461_generator.py"   in all_scripts, "MC ATM issuing must include T461"
+        assert "mc_t140_generator.py" not in all_scripts, "MC ATM issuing must NOT include T140"
+    if "MC" in cfg.networks and channel in ("POS", "ECOM"):
+        assert "ptlf_generator_v2.py" in all_scripts, "MC POS must include PTLF"
+        assert "tlf_generator.py"     not in all_scripts, "MC POS must NOT include TLF"
+    if "RUPAY" in cfg.networks and channel == "POS":
+        assert "ptlf_generator_v2.py" in all_scripts, "RuPay POS must include PTLF"
+    if "RUPAY" in cfg.networks and channel == "ATM":
+        assert "tlf_generator.py"     in all_scripts, "RuPay ATM must include TLF"
     if "VISA" in cfg.networks and channel == "ATM":
         assert "tlf_generator.py"        in all_scripts, "Visa ATM must include TLF"
         assert "ptlf_generator_v2.py"    not in all_scripts, "Visa ATM must NOT include PTLF"
