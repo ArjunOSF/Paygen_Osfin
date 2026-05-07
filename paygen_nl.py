@@ -339,13 +339,29 @@ def _yyyymmdd_to_arg(d: str) -> str:
 
 # Flags each script supports — used to filter args before invoking
 _SCRIPT_FLAGS = {
+    # ── Visa switch / network ──
     "ptlf_generator_v2.py":    {"--num-txns","--date","--currency","--testcase","--seed","--output","--institution","--validate","--random"},
-    "tlf_generator.py":        {"--num-txns","--date","--currency","--testcase","--seed","--output","--institution","--validate","--random"},
     "epin_generator.py":       {"--num-txns","--date","--currency","--testcase","--seed","--output","--member-id","--reversal-offset","--validate","--random"},
+    "ep747_generator.py":      {"--num-txns","--date","--currency","--testcase","--seed","--output","--member-id","--bin"},
+    # ── Mastercard switch / network ──
+    "tlf_generator.py":        {"--num-txns","--date","--currency","--testcase","--seed","--output","--institution","--validate","--random"},
+    "mc_t112_generator.py":    {"--num-txns","--date","--seed","--output","--testcase","--currency"},
+    "mc_t140_generator.py":    {"--num-txns","--date","--seed","--output","--testcase","--currency"},
+    "mc_t464_generator.py":    {"--num-txns","--date","--seed","--output","--testcase","--currency"},
+    "t464_generator_v2.py":    {"--num-txns","--date","--currency","--testcase","--seed","--output","--reversal-offset","--validate","--random"},
+    "mci_ar_generator.py":     {"--num-txns","--date","--seed","--output","--testcase","--currency"},
+    "t461_generator.py":       {"--num-txns","--date","--seed","--output","--side","--validate","--random"},
+    # ── Shared CBS / GL ──
     "cbs_generator.py":        {"--num-txns","--date","--testcase","--seed","--output","--network","--random"},
     "fss_gl_out_generator.py": {"--num-txns","--date","--testcase","--seed","--output","--network","--random"},
-    "ep747_generator.py":      {"--num-txns","--date","--currency","--testcase","--seed","--output","--member-id","--bin"},
-    "t464_generator_v2.py":    {"--num-txns","--date","--currency","--testcase","--seed","--output","--reversal-offset","--validate","--random"},
+    # ── NFS ──
+    "fig_b2c_generator.py":      {"--num-txns","--date","--seed","--output","--validate","--random"},
+    "ntsl_generator.py":         {"--num-txns","--date","--seed","--output","--bank-name","--random"},
+    "nfs_adjustment_generator.py": {"--num-txns","--date","--seed","--output","--random"},
+    "verifireversal_generator.py": {"--num-txns","--date","--seed","--output","--random"},
+    # ── RuPay ──
+    "rupay_88_generator.py":   {"--num-txns","--date","--seed","--output","--category","--member-inst-cd","--version","--file-seq","--random"},
+    "rupay_dsr_generator.py":  {"--date","--seed","--output","--random"},
 }
 
 
@@ -372,65 +388,246 @@ def _filter_args(script: str, args: List[str]) -> List[str]:
     return out
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# ROUTING TABLE — single source of truth for which generators run for each
+# (network, channel, role) combination. Matches the documented coverage
+# matrix exactly. Use channel=None or role=None for "any" wildcard.
+#
+# Each entry in the recipe list is (script, extra_args, label, output_ext).
+# The orchestrator adds --num-txns, --date, --seed, --currency, --testcase,
+# and --output for every generator from a single shared common_args block,
+# then layers extra_args on top. _filter_args() drops any flag the target
+# script doesn't recognise so per-generator CLI surface stays clean.
+# ─────────────────────────────────────────────────────────────────────────
+
+ROUTING_TABLE = {
+    # ───── Mastercard ─────
+    ("MC", "POS", "ACQUIRING"): [
+        ("mc_t112_generator.py",     [],                            "T112 (MC IPM)",          "txt"),
+        ("tlf_generator.py",         [],                            "TLF (MC switch)",        "txt"),
+        ("cbs_generator.py",         ["--network", "MC"],           "CBS (MC)",               "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "MC"],           "FSS GL OUT (MC)",        "txt"),
+        ("mc_t140_generator.py",     [],                            "T140 (MC settlement)",   "txt"),
+    ],
+    ("MC", "POS", "ISSUING"): [
+        ("mc_t112_generator.py",     [],                            "T112 (MC IPM)",          "txt"),
+        ("tlf_generator.py",         [],                            "TLF (MC switch)",        "txt"),
+        ("cbs_generator.py",         ["--network", "MC"],           "CBS (MC)",               "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "MC"],           "FSS GL OUT (MC)",        "txt"),
+        ("mc_t140_generator.py",     [],                            "T140 (MC settlement)",   "txt"),
+    ],
+    ("MC", "ATM", "ACQUIRING"): [
+        ("t464_generator_v2.py",     [],                            "T464 (MC ATM)",          "txt"),
+        ("tlf_generator.py",         [],                            "TLF (MC switch)",        "txt"),
+        ("cbs_generator.py",         ["--network", "MC"],           "CBS (MC)",               "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "MC"],           "FSS GL OUT (MC)",        "txt"),
+        ("mc_t140_generator.py",     [],                            "T140 (MC settlement)",   "txt"),
+        ("mci_ar_generator.py",      [],                            "T057 (MCI.AR DCR — ACQ)","txt"),
+        ("t461_generator.py",        ["--side", "ACQ"],             "T461 (hourly perf — ACQ)","txt"),
+    ],
+    ("MC", "ATM", "ISSUING"): [
+        # Issuing ATM has NO T057 / NO T461 (acquiring-only reports)
+        ("t464_generator_v2.py",     [],                            "T464 (MC ATM)",          "txt"),
+        ("tlf_generator.py",         [],                            "TLF (MC switch)",        "txt"),
+        ("cbs_generator.py",         ["--network", "MC"],           "CBS (MC)",               "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "MC"],           "FSS GL OUT (MC)",        "txt"),
+        ("mc_t140_generator.py",     [],                            "T140 (MC settlement)",   "txt"),
+    ],
+
+    # ───── Visa ─────
+    ("VISA", "POS", "ACQUIRING"): [
+        ("epin_generator.py",        [],                            "EPIN (Visa BASE II)",    "txt"),
+        ("ptlf_generator_v2.py",     [],                            "PTLF (Visa switch)",     "txt"),
+        ("cbs_generator.py",         ["--network", "VISA"],         "CBS (Visa)",             "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "VISA"],         "FSS GL OUT (Visa)",      "txt"),
+        ("ep747_generator.py",       [],                            "EP747 (VSS bundle)",     "txt"),
+    ],
+    ("VISA", "POS", "ISSUING"): [
+        ("epin_generator.py",        [],                            "EPIN (Visa BASE II)",    "txt"),
+        ("ptlf_generator_v2.py",     [],                            "PTLF (Visa switch)",     "txt"),
+        ("cbs_generator.py",         ["--network", "VISA"],         "CBS (Visa)",             "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "VISA"],         "FSS GL OUT (Visa)",      "txt"),
+        ("ep747_generator.py",       [],                            "EP747 (VSS bundle)",     "txt"),
+    ],
+    ("VISA", "ATM", "ACQUIRING"): [
+        ("epin_generator.py",        [],                            "EPIN (Visa BASE II)",    "txt"),
+        ("tlf_generator.py",         [],                            "TLF (Visa ATM switch)",  "txt"),
+        ("cbs_generator.py",         ["--network", "VISA"],         "CBS (Visa)",             "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "VISA"],         "FSS GL OUT (Visa)",      "txt"),
+        ("ep747_generator.py",       [],                            "EP747 (VSS bundle)",     "txt"),
+    ],
+    ("VISA", "ATM", "ISSUING"): [
+        ("epin_generator.py",        [],                            "EPIN (Visa BASE II)",    "txt"),
+        ("tlf_generator.py",         [],                            "TLF (Visa ATM switch)",  "txt"),
+        ("cbs_generator.py",         ["--network", "VISA"],         "CBS (Visa)",             "txt"),
+        ("fss_gl_out_generator.py",  ["--network", "VISA"],         "FSS GL OUT (Visa)",      "txt"),
+        ("ep747_generator.py",       [],                            "EP747 (VSS bundle)",     "txt"),
+    ],
+
+    # ───── NFS (channel-flexible: AEPS / Micro-ATM / etc.) ─────
+    ("NFS", None, None): [
+        ("fig_b2c_generator.py",     [],                            "FIG B2C TRAXN",          "csv"),
+        ("cbs_generator.py",         ["--network", "NFS"],          "CBS (NFS)",              "txt"),
+        ("ntsl_generator.py",        [],                            "NTSL Daily Settlement",  "xlsx"),
+    ],
+
+    # ───── RuPay ─────
+    ("RUPAY", "POS", None): [
+        ("rupay_88_generator.py",    ["--category", "P"],           "RuPay 88 (XML)",         "xml"),
+        ("cbs_generator.py",         ["--network", "RUPAY"],        "CBS (RuPay)",            "txt"),
+        ("rupay_dsr_generator.py",   [],                            "RuPay DSR",              "xlsx"),
+    ],
+    ("RUPAY", "ATM", None): [
+        ("rupay_88_generator.py",    ["--category", "A"],           "RuPay 88 (XML)",         "xml"),
+        ("cbs_generator.py",         ["--network", "RUPAY"],        "CBS (RuPay)",            "txt"),
+        ("rupay_dsr_generator.py",   [],                            "RuPay DSR",              "xlsx"),
+    ],
+}
+
+
+def _lookup_recipe(net: str, channel: Optional[str], role: Optional[str]):
+    """Find best-matching recipe in routing table. Tries exact → role-wildcard
+    → channel-wildcard → both-wildcard. Returns None if no match."""
+    for key in [(net, channel, role),
+                (net, channel, None),
+                (net, None,    None)]:
+        if key in ROUTING_TABLE:
+            return ROUTING_TABLE[key]
+    return None
+
+
+def _validate_plan(plan, cfg, per_net):
+    """Assertion-based sanity checks per spec — fail loudly if routing went wrong."""
+    scripts_per_net = {}
+    for net in per_net:
+        scripts_per_net[net] = [s for s, _, _ in plan]   # plan is global; we don't split per-net here
+    all_scripts = [s for s, _, _ in plan]
+
+    role = (cfg.role or "").upper()
+    channel = (cfg.channel or "").upper()
+
+    if "MC" in cfg.networks and channel == "ATM" and role == "ACQUIRING":
+        assert "mci_ar_generator.py" in all_scripts, "MC ATM acquiring must include T057 (mci_ar)"
+        assert "t461_generator.py"   in all_scripts, "MC ATM acquiring must include T461"
+    if "MC" in cfg.networks and channel == "ATM" and role == "ISSUING":
+        assert "mci_ar_generator.py" not in all_scripts, "MC ATM issuing must NOT include T057"
+        assert "t461_generator.py"   not in all_scripts, "MC ATM issuing must NOT include T461"
+    if "VISA" in cfg.networks and channel == "ATM":
+        assert "tlf_generator.py"        in all_scripts, "Visa ATM must include TLF"
+        assert "ptlf_generator_v2.py"    not in all_scripts, "Visa ATM must NOT include PTLF"
+    if "VISA" in cfg.networks and channel in ("POS", "ECOM"):
+        assert "ptlf_generator_v2.py"    in all_scripts, "Visa POS must include PTLF"
+        assert "tlf_generator.py"        not in all_scripts, "Visa POS must NOT include TLF"
+    if "MC" in cfg.networks and channel in ("POS", "ECOM"):
+        assert "mc_t112_generator.py"    in all_scripts, "MC POS must include T112"
+        assert "t464_generator_v2.py"    not in all_scripts, "MC POS must NOT include T464"
+    if "MC" in cfg.networks and channel == "ATM":
+        assert "t464_generator_v2.py"    in all_scripts, "MC ATM must include T464"
+        assert "mc_t112_generator.py"    not in all_scripts, "MC ATM must NOT include T112"
+    if "MC" in cfg.networks or "VISA" in cfg.networks:
+        assert "fss_gl_out_generator.py" in all_scripts, "MC/Visa routes must include FSS GL OUT"
+        assert "cbs_generator.py"        in all_scripts, "All routes must include CBS"
+    if "NFS" in cfg.networks:
+        assert "fig_b2c_generator.py"    in all_scripts, "NFS must include FIG B2C"
+        assert "mc_t112_generator.py"    not in all_scripts, "NFS must NOT include T112"
+        assert "epin_generator.py"       not in all_scripts, "NFS must NOT include EPIN"
+    if "RUPAY" in cfg.networks:
+        assert "rupay_88_generator.py"   in all_scripts, "RuPay must include RuPay 88 XML"
+        assert "fig_b2c_generator.py"    not in all_scripts, "RuPay must NOT include FIG B2C"
+
+
 def resolve_files(cfg: ParsedConfig) -> List[Tuple[str, List[str], str]]:
-    """Returns list of (script_name, cli_args, label) ready to invoke.
-    Only generates files for what's in scope from the current generator suite."""
+    """Resolve per-prompt config to the exact list of (script, args, label) to run.
+
+    Routing is driven by ROUTING_TABLE (above) keyed on (network, channel, role).
+    Same --seed is passed to every generator in the batch so RRNs and join keys
+    correlate across all output files. Scenario flags (reversal/chargeback/
+    merchandise_credit/on_us/recon_break) layer onto the base routing by setting
+    the --testcase flag — generators handle each case internally.
+    """
     plan: List[Tuple[str, List[str], str]] = []
-    def _add(script: str, args: List[str], label: str) -> None:
-        plan.append((script, _filter_args(script, args), label))
+
     date = cfg.date or (cfg.date_buckets[0].date_yyyymmdd if cfg.date_buckets else
                         datetime.now().strftime("%Y%m%d"))
 
-    # Determine per-network counts
+    # ── Per-network counts ──────────────────────────────────────────────
     if cfg.network_split:
         per_net = dict(cfg.network_split)
     elif len(cfg.networks) == 1:
-        per_net = {cfg.networks[0]: cfg.count or sum(b.count for b in cfg.date_buckets)}
+        per_net = {cfg.networks[0]: cfg.count or sum(b.count for b in cfg.date_buckets) or 1000}
     else:
-        # Default 50/50 if not specified
-        total = cfg.count or 0
-        share = total // len(cfg.networks)
+        total = cfg.count or 1000
+        share = total // max(1, len(cfg.networks))
         per_net = {n: share for n in cfg.networks}
 
-    # Determine testcase
-    testcase = "random"
-    if cfg.scenarios:
-        kinds = [s[0] for s in cfg.scenarios]
-        if "chargebacks" in kinds: testcase = "chargebacks"
-        elif "recon_break" in kinds: testcase = "recon_break"
-        elif "high_value" in kinds: testcase = "high_value"
-    if cfg.channel == "ATM":
-        testcase = "atm_mix"
+    # ── SEED rule (non-negotiable per spec) ─────────────────────────────
+    # Single seed for the entire batch so all files correlate via RRN.
+    # If user supplies one in the future via cfg.seed we'd take that; for now
+    # we use a deterministic 42 so reproducible across runs.
+    seed = "42"
 
-    common_args = ["--date", date, "--currency", cfg.currency, "--testcase", testcase]
-    if cfg.role:
-        # we don't have a --role flag in v1 — encoded via testcase choice
-        pass
+    # ── Scenario detection ──────────────────────────────────────────────
+    scenario_kinds = {s[0].lower() for s in cfg.scenarios} if cfg.scenarios else set()
+    has_reversal           = bool(scenario_kinds & {"reversal", "reversals"})
+    has_chargeback         = bool(scenario_kinds & {"chargeback", "chargebacks"})
+    has_dispute            = bool(scenario_kinds & {"dispute", "disputes"}) or has_chargeback
+    has_late_reversal      = bool(scenario_kinds & {"late_reversal", "late reversal"})
+    has_merchandise_credit = bool(scenario_kinds & {"merchandise_credit", "merchandise credit"})
+    has_on_us              = "on_us" in scenario_kinds or (cfg.role or "").upper() == "ON_US"
+    has_recon_break        = "recon_break" in scenario_kinds
+    has_high_value         = "high_value" in scenario_kinds
 
+    # Pick the testcase flag value based on scenario (priority order matters).
+    # Generators that don't recognise the value get "random" via _filter_args
+    # / their own argparse choices.
+    if   has_chargeback:         testcase = "chargebacks"
+    elif has_reversal:           testcase = "chargebacks"   # existing reversal path lives under chargebacks testcase
+    elif has_merchandise_credit: testcase = "chargebacks"   # MC pairs added by epin under chargebacks path
+    elif has_on_us:              testcase = "on_us"
+    elif has_recon_break:        testcase = "recon_break"
+    elif has_high_value:         testcase = "high_value"
+    elif (cfg.channel or "").upper() == "ATM": testcase = "atm_mix"
+    else:                        testcase = "random"
+
+    role    = (cfg.role or "ACQUIRING").upper()
+    channel = (cfg.channel or "POS").upper()
+    if channel == "ECOM": channel_lookup = "POS"
+    else:                 channel_lookup = channel
+
+    def _add(script, args, label):
+        plan.append((script, _filter_args(script, args), label))
+
+    # ── Build base file list per network from routing table ─────────────
     for net, count in per_net.items():
         if count <= 0: continue
-        net_args = common_args + ["--num-txns", str(count), "--seed", "42"]
+        recipe = _lookup_recipe(net, channel_lookup, role)
+        if recipe is None:
+            raise ValueError(f"No routing for ({net}, {channel}, {role}). "
+                             f"Add an entry to ROUTING_TABLE.")
+        common_args = ["--num-txns", str(count), "--date", date,
+                       "--currency", cfg.currency, "--testcase", testcase,
+                       "--seed", seed]
+        for script, extra, label, ext in recipe:
+            stem = script.replace("_generator", "").replace("_v2", "").replace(".py", "")
+            out_path = f"out_{date}/{stem}_{net.lower()}.{ext}"
+            args = list(common_args) + list(extra) + ["--output", out_path]
+            _add(script, args, label)
 
-        if net == "VISA":
-            if cfg.channel in ("POS", "ECOM"):
-                _add("ptlf_generator_v2.py", net_args + ["--output", f"out_{date}/ptlf_visa.txt"], "PTLF (Visa switch)")
-            _add("epin_generator.py", net_args + ["--output", f"out_{date}/epin.txt"], "EPIN (Visa BASE II)")
-            _add("cbs_generator.py", net_args + ["--network", "VISA", "--output", f"out_{date}/cbs_visa.txt"], "CBS (Visa)")
-            _add("ep747_generator.py", net_args + ["--output", f"out_{date}/ep747.txt"], "EP747 (Visa VSS bundle)")
+    # ── NFS conditional adds: dispute → Adjustment, late reversal → VeriFireversal ──
+    if "NFS" in cfg.networks:
+        nfs_count = per_net.get("NFS", cfg.count or 1000)
+        nfs_common = ["--num-txns", str(nfs_count), "--date", date, "--seed", seed]
+        if has_dispute:
+            _add("nfs_adjustment_generator.py",
+                 nfs_common + ["--output", f"out_{date}/nfs_adjustment.xlsx"],
+                 "NFS Adjustment Report (dispute)")
+        if has_late_reversal or has_reversal:
+            _add("verifireversal_generator.py",
+                 nfs_common + ["--output", f"out_{date}/nfs_verifireversal.xlsx"],
+                 "NFS VeriFireversal (late reversal)")
 
-        elif net == "MC":
-            if cfg.channel == "ATM":
-                _add("t464_generator_v2.py", net_args + ["--output", f"out_{date}/t464.txt"], "T464 (MC ATM acquiring)")
-            else:
-                _add("tlf_generator.py", net_args + ["--output", f"out_{date}/tlf_mc.txt"], "TLF (MC switch)")
-            _add("cbs_generator.py", net_args + ["--network", "MC", "--output", f"out_{date}/cbs_mc.txt"], "CBS (Mastercard)")
-
-    # FSS GL OUT for ATM scenarios
-    if cfg.channel == "ATM":
-        total = sum(per_net.values())
-        _add("fss_gl_out_generator.py",
-             common_args + ["--num-txns", str(total), "--seed", "42",
-                            "--output", f"out_{date}/fss_gl_out.txt"], "FSS GL OUT")
+    # ── Validate the resolved plan against spec assertions ──────────────
+    _validate_plan(plan, cfg, per_net)
 
     return plan
 
