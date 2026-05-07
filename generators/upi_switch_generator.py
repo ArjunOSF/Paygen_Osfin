@@ -79,7 +79,11 @@ def _format_record(nfs_rrn: str, upi_rrn: str, business_date: str,
     ])
 
 
-def generate(num_txns: int, business_date: str, seed: Optional[int] = None):
+def generate(num_txns: int, business_date: str, seed: Optional[int] = None,
+             retry_pct: float = 0.10):
+    """PROMPT 11 FIX 1: NFS_RRN is NOT unique. ~10% of records share NFS_RRN
+    with another row (same customer retry) — different UPI_RRN, different timestamp,
+    same amount. Recon match key MUST be NFS_RRN + Date + Amount, never NFS_RRN alone."""
     rng = random.Random(seed if seed is not None else int(datetime.now().timestamp()))
     # Mirror ISSRPIDF's RNG sequence so RRNs align:
     nfs_rrn_start = rng.randint(600_000_000_000, 699_999_999_999)
@@ -87,16 +91,26 @@ def generate(num_txns: int, business_date: str, seed: Optional[int] = None):
 
     rows = []
     body_lines = []
+    n_retries = int(num_txns * retry_pct)
+    retry_indices = set(rng.sample(range(1, num_txns), min(n_retries, num_txns - 1)))
+
     for i in range(num_txns):
-        nfs_rrn = str(nfs_rrn_start + i).zfill(12)
-        upi_rrn = str(upi_rrn_start + i).zfill(12)
-        # consume ATM_PREFIX choice from ISSRPIDF parity (skip to keep alignment)
-        rng.choice(["a"])  # placeholder consumption — keeps amount RNG state aligned
-        amount = rng.randint(50, 5000) * 10000
+        if i in retry_indices:
+            # Retry: reuse the previous row's NFS_RRN + amount, fresh UPI_RRN + bumped time
+            prev = rows[-1]
+            nfs_rrn = prev["nfs_rrn"]
+            upi_rrn = str(upi_rrn_start + i).zfill(12)
+            amount  = prev["amount_paise"]
+        else:
+            nfs_rrn = str(nfs_rrn_start + i).zfill(12)
+            upi_rrn = str(upi_rrn_start + i).zfill(12)
+            rng.choice(["a"])
+            amount = rng.randint(50, 5000) * 10000
         rec = _format_record(nfs_rrn, upi_rrn, business_date, amount, rng)
         body_lines.append(rec)
         rows.append({"nfs_rrn": nfs_rrn, "upi_rrn": upi_rrn,
-                     "amount_paise": amount})
+                     "amount_paise": amount,
+                     "is_retry": i in retry_indices})
 
     header = f"FHIM{business_date}"
     trailer = f"FT{len(body_lines):09d}"
@@ -119,10 +133,17 @@ def write_outputs(rows, lines, out_path):
         for r in rows:
             w.writerow([r["nfs_rrn"], r["upi_rrn"], r["amount_paise"]])
 
+    # Count duplicate NFS_RRNs (retry transactions)
+    rrn_counts = {}
+    for r in rows:
+        rrn_counts[r["nfs_rrn"]] = rrn_counts.get(r["nfs_rrn"], 0) + 1
+    duplicates = sum(1 for c in rrn_counts.values() if c > 1)
     totals = {
         "num_records": len(rows),
         "total_amount_paise": sum(r["amount_paise"] for r in rows),
         "structure": "SHA1 + FHIM + N records + FT",
+        "duplicate_nfs_rrns": duplicates,
+        "match_key": "NFS_RRN + Date + Amount  (NFS_RRN alone is NOT unique)",
     }
     with open(base + "_totals.json", "w", encoding="utf-8") as f:
         json.dump(totals, f, indent=2)

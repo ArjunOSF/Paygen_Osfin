@@ -191,7 +191,18 @@ def _make_record(idx: int, business_date_yyyymmdd: str, network: str,
     hh = rng.randint(0, 23); mm = rng.randint(0, 59); ss = rng.randint(0, 59)
     time_str = f"{hh:02d}{mm:02d}{ss:02d}"
     narration = _make_narration(tran_type, terminal, rrn, date_ddmmyyyy)
-    net = network.upper() if tran_type else ""
+    # PROMPT 11 FIX 2 — network field per real-file pattern:
+    #   NFS (ICCW / NFS-rail) → "NFS"
+    #   Visa                  → "VISA"
+    #   MC                    → "" (blank as in real file: 27764 VISA / 2465 blank / 1 NFS)
+    if not tran_type:
+        net = ""
+    elif network.upper() == "NFS":
+        net = "NFS"
+    elif network.upper() == "VISA":
+        net = "VISA"
+    else:
+        net = ""
 
     return GlRec(
         gl_account=gl_account, branch_code="10201", user_id="9900001",

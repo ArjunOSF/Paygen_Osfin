@@ -98,6 +98,12 @@ class Txn:
     has_chip: bool = True
     has_supplemental: bool = False
     test_case: str = "random"
+    # PROMPT 11 FIX 3 — explicit BASE II spec fields:
+    resp_code: str = "00"          # [82:84] '00'=approved, '05'=declined
+    stan: str = "000000000000"     # [52:64] System Trace Audit Number — 12 digits
+    bin_acquirer: str = "00099900" # [3:11] Acquirer BIN — 8 chars
+    tran_time_hhmmss: str = "000000"  # [46:52]
+    merchant_zip: str = "000000"      # [124:130]
     # PROMPT 7 FIX: original-txn linking + reversal date offset
     original_arn: str = ""        # for TC25/TC27 — links to original TC05/TC07
     original_date: str = ""       # for reversals — MMDD of original txn
@@ -154,20 +160,46 @@ def _place_r(buf: list, value, start_1idx: int, length: int) -> None:
 # ---------------------------------------------------------------------------
 
 def _apply_tcr0(template_key: str, t: Txn) -> str:
-    """TCR0 — main record. Substitute PAN, ARN, amount, merchant, MCC, auth, POS entry."""
-    buf = list(TEMPLATES[template_key])
-    _place  (buf, t.pan,                  5,  16)
-    _place  (buf, t.arn,                 27,  23)
-    _place_r(buf, t.amount_paise,        62,  12)
-    _place  (buf, t.currency,            74,   3)
-    _place_r(buf, t.amount_paise,        77,  12)
-    _place  (buf, t.currency,            89,   3)
-    _place  (buf, t.merchant_name[:25],  92,  25)
-    _place  (buf, t.merchant_city[:13], 117,  13)
-    _place  (buf, t.merchant_country,   130,   2)
-    _place  (buf, t.mcc,                133,   4)
-    _place  (buf, t.auth_code,          153,   6)
-    _place  (buf, t.pos_entry,          162,   2)
+    """TCR0 — built from spec positions (BASE II decode):
+       [0:2] TC | [2:3] TCR | [3:11] BIN | [11:28] PAN | [28:40] AMT_1 |
+       [40:46] DATE | [46:52] TIME | [52:64] STAN | [64:76] RRN |
+       [76:82] AUTH | [82:84] RESP | [84:109] MERCH | [109:122] CITY |
+       [122:124] COUNTRY | [124:130] ZIP | [130:168] padding."""
+    tc = template_key[:2]              # '05' / '06' / '07' / '25' / '27'
+    buf = [" "] * REC_LEN
+    def put(start, value, width):
+        v = str(value)[:width].ljust(width)
+        for i, ch in enumerate(v):
+            buf[start + i] = ch
+    def putr(start, value, width):
+        v = str(value).rjust(width)[-width:]
+        for i, ch in enumerate(v):
+            buf[start + i] = ch
+    put(0,   tc,                  2)
+    put(2,   "0",                 1)                       # TCR
+    put(3,   t.bin_acquirer,      8)
+    putr(11, t.pan,               17)
+    putr(28, t.amount_paise,      12)                      # AMT_1 — zero-padded paise
+    # Replace right-pad spaces with '0' for amount field
+    for i in range(28, 40):
+        if buf[i] == " ":
+            buf[i] = "0"
+    # Date YYMMDD — derive from purchase_date (MMDD) + business year (yy from arn)
+    yy = (t.original_date or t.purchase_date)[:0]   # placeholder
+    # Reconstruct YYMMDD: arn carries YDDD; safer to take from t.purchase_date which is MMDD
+    yymmdd = (t.arn[7:9] if len(t.arn) >= 9 else "26") + t.purchase_date[:4]
+    # Above only gives 6 chars if purchase_date is MMDD (4); pad if shorter
+    yymmdd = (yymmdd + "000000")[:6]
+    put(40, yymmdd,               6)
+    put(46, t.tran_time_hhmmss,   6)
+    put(52, t.stan,               12)
+    put(64, t.arn[-12:],          12)                      # RRN — last 12 of ARN
+    put(76, t.auth_code,          6)
+    put(82, t.resp_code,          2)
+    put(84, t.merchant_name[:25].ljust(25), 25)
+    put(109, t.merchant_city[:13].ljust(13), 13)
+    put(122, t.merchant_country,  2)
+    put(124, t.merchant_zip,      6)
     return "".join(buf)
 
 
@@ -300,12 +332,23 @@ def _make_txn(idx: int, case: str, business_date: str, currency: str,
         pass
     # acquiring/issuing/random/high_value/on_us all default to TC05 sales
 
+    # PROMPT 11 FIX 3 — populate explicit spec fields
+    resp = "00"
+    if case == "recon_break" and rng.random() < 0.10:
+        resp = "05"   # 10% declined for break-test cases
+    stan = str(rng.randint(0, 999_999_999_999)).zfill(12)
+    hh = rng.randint(0, 23); mm = rng.randint(0, 59); ss = rng.randint(0, 59)
+    time_hhmmss = f"{hh:02d}{mm:02d}{ss:02d}"
+    zip_code = str(rng.randint(100000, 999999))
+
     return Txn(
         pan=pan, arn=arn, amount_paise=amount, purchase_date=purchase_mmdd,
         merchant_name=name, merchant_city=city, merchant_country=country,
         mcc=mcc, auth_code=auth, pos_entry=rng.choice(["07", "05", "90", "81"]),
         currency=currency, tc_kind=tc_kind, is_reversal=is_rev,
         has_chip=has_chip, has_supplemental=has_supp, test_case=case,
+        resp_code=resp, stan=stan, tran_time_hhmmss=time_hhmmss,
+        merchant_zip=zip_code,
     )
 
 
@@ -388,6 +431,13 @@ def write_outputs(txns: List[Txn], records: List[str], out_path: str,
                         t.test_case])
 
     tcr_counts = _counter([r[:4] for r in records])
+    # PROMPT 11 FIX 3/4 — per-TC AMT_1 sums for EP747 VSS-115 reconciliation.
+    # Sum over Txn objects (tc_kind + resp_code) — matches the in-memory state EP747 uses.
+    def _by_tc(kind, ok=True):
+        return [t for t in txns if t.tc_kind == kind and (t.resp_code == "00") == ok and not t.is_reversal]
+    tc05 = _by_tc("TC05"); tc06 = _by_tc("TC06"); tc07 = _by_tc("TC07")
+    tc25 = [t for t in txns if t.tc_kind == "TC25"]
+    tc27 = [t for t in txns if t.tc_kind == "TC27"]
     totals = {
         "num_txns": len(txns), "num_records": len(records),
         "total_amount_paise": sum(t.amount_paise for t in txns),
@@ -396,6 +446,15 @@ def write_outputs(txns: List[Txn], records: List[str], out_path: str,
         "reversals": sum(1 for t in txns if t.is_reversal),
         "currency": currency, "business_date": business_date,
         "record_length": REC_LEN, "member_id": "401561",
+        # Per-TC AMT_1 sums — drives EP747 VSS-115 amounts
+        "tc05_count":    len(tc05),
+        "tc05_amt_sum":  sum(t.amount_paise for t in tc05),
+        "tc06_count":    len(tc06),
+        "tc06_amt_sum":  sum(t.amount_paise for t in tc06),
+        "tc07_count":    len(tc07),
+        "tc07_amt_sum":  sum(t.amount_paise for t in tc07),
+        "tc25_count":    len(tc25),
+        "tc27_count":    len(tc27),
     }
     with open(base + "_expected_totals.json", "w", encoding="utf-8") as f:
         json.dump(totals, f, indent=2)
