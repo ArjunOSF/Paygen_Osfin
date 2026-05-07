@@ -370,6 +370,7 @@ _SCRIPT_FLAGS = {
     # ── NFS ──
     "fig_b2c_generator.py":      {"--num-txns","--date","--seed","--output","--validate","--random"},
     "issrpidf_generator.py":     {"--num-txns","--date","--seed","--output","--mcc"},
+    "upi_switch_generator.py":   {"--num-txns","--date","--seed","--output"},
     "ntsl_generator.py":         {"--date","--seed","--output","--bank-name","--random"},
     "nfs_adjustment_generator.py": {"--num-txns","--date","--seed","--output","--random"},
     "verifireversal_generator.py": {"--num-txns","--date","--seed","--output","--random"},
@@ -484,10 +485,10 @@ ROUTING_TABLE = {
         ("fss_gl_out_generator.py",  ["--network", "NFS"],          "FSS GL OUT (NFS)",       "txt"),
         ("ntsl_generator.py",        [],                            "NTSL Daily Settlement",  "xlsx"),
     ],
-    # ───── NFS ICCW Issuer recon (MCC 6013 — dual RRN) ─────
+    # ───── NFS ICCW Issuer recon (MCC 6013 — dual RRN, NO TLF) ─────
     ("NFS", None, "ICCW"): [
         ("issrpidf_generator.py",    ["--mcc", "6013"],             "ISSRPIDF (NPCI MCC 6013 ICCW)","txt"),
-        ("tlf_generator.py",         [],                            "TLF (NFS UPI_ICCW switch)","txt"),
+        ("upi_switch_generator.py",  [],                            "UPI_SWITCH (ICCW)",      "txt"),
         ("cbs_generator.py",         ["--network", "NFS"],          "CBS (NFS)",              "txt"),
         ("fss_gl_out_generator.py",  ["--network", "NFS"],          "FSS GL OUT (NFS)",       "txt"),
         ("ntsl_generator.py",        [],                            "NTSL Daily Settlement",  "xlsx"),
