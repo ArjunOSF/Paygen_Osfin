@@ -665,7 +665,7 @@ def format_summary(cfg: ParsedConfig, plan: List[Tuple[str, List[str], str]]) ->
     return f"Understood → {files}\n             {line1}"
 
 
-def _zip_and_deliver(out_dir: Path) -> Optional[Path]:
+def _zip_and_deliver(out_dir: Path, label: Optional[str] = None) -> Optional[Path]:
     """Zip the generated output dir and drop it in ~/Downloads/. Reveal in Finder on macOS."""
     import zipfile, platform
     if not out_dir.exists() or not any(out_dir.iterdir()):
@@ -673,7 +673,8 @@ def _zip_and_deliver(out_dir: Path) -> Optional[Path]:
     downloads = Path.home() / "Downloads"
     downloads.mkdir(exist_ok=True)
     ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
-    zip_path = downloads / f"{out_dir.name}_{ts}.zip"
+    base = label or out_dir.name
+    zip_path = downloads / f"{base}_{ts}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in out_dir.rglob("*"):
             if f.is_file():
@@ -687,8 +688,24 @@ def _zip_and_deliver(out_dir: Path) -> Optional[Path]:
     return zip_path
 
 
+def _build_zip_label(cfg) -> str:
+    """e.g. paygen_MC_ACQ_ATM_1000_20260507"""
+    parts = ["paygen"]
+    if cfg.networks:
+        parts.append("-".join(cfg.networks))
+    if cfg.role:
+        parts.append({"ACQUIRING": "ACQ", "ISSUING": "ISS", "ON_US": "ONUS"}.get(cfg.role, cfg.role))
+    if cfg.channel:
+        parts.append(cfg.channel)
+    if cfg.count:
+        parts.append(f"{cfg.count}txn")
+    if cfg.date:
+        parts.append(cfg.date)
+    return "_".join(parts)
+
+
 def run_plan(plan: List[Tuple[str, List[str], str]], dry_run: bool = False,
-             auto_download: bool = True) -> int:
+             auto_download: bool = True, zip_label: Optional[str] = None) -> int:
     if not plan:
         print("  Nothing to generate.")
         return 0
@@ -728,7 +745,7 @@ def run_plan(plan: List[Tuple[str, List[str], str]], dry_run: bool = False,
     # Auto-download — zip output dirs and drop in ~/Downloads/
     if not dry_run and auto_download and rc == 0:
         for od in sorted(out_dirs):
-            zip_path = _zip_and_deliver(od)
+            zip_path = _zip_and_deliver(od, zip_label)
             if zip_path:
                 print(f"\n  📦 Downloaded → {zip_path}")
     return rc
@@ -796,7 +813,8 @@ def interactive(initial_prompt: str = "", dry_run: bool = False,
         except (EOFError, KeyboardInterrupt):
             print(); return 0
         if ans in ("", "y", "yes"):
-            return run_plan(plan, dry_run=dry_run, auto_download=auto_download)
+            return run_plan(plan, dry_run=dry_run, auto_download=auto_download,
+                             zip_label=_build_zip_label(cfg))
         elif ans in ("edit", "e"):
             cfg = None; prompt = ""; continue
         else:
