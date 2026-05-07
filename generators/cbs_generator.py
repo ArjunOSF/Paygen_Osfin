@@ -47,8 +47,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-NETWORK_SOURCE = {"MC": "MDS", "VISA": "VDS"}
-PAN_PREFIX     = {"MC": "5", "VISA": "4"}
+NETWORK_SOURCE = {"MC": "MDS", "VISA": "VDS", "NFS": "NFS", "RUPAY": "RPS"}
+PAN_PREFIX     = {"MC": "5",   "VISA": "4",   "NFS": "6",   "RUPAY": "6"}
 
 
 @dataclass
@@ -260,9 +260,9 @@ def _counter(items):
 # ---------------------------------------------------------------------------
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(description="CBS pipe-delimited generator (MC + Visa)")
-    p.add_argument("--network", choices=["MC", "VISA"], default="MC",
-                   help="MC = Mastercard (MDS), VISA = Visa (VDS)")
+    p = argparse.ArgumentParser(description="CBS pipe-delimited generator (MC / Visa / NFS / RuPay)")
+    p.add_argument("--network", choices=["MC", "VISA", "NFS", "RUPAY"], default="MC",
+                   help="MC=Mastercard (MDS), VISA=Visa (VDS), NFS=NFS (NFS), RUPAY=RuPay (RPS)")
     p.add_argument("--num-txns", type=int, default=10)
     p.add_argument("--date", default=datetime.now().strftime("%Y%m%d"))
     p.add_argument("--testcase", default="random",

@@ -319,7 +319,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="FSS GL OUT generator (3 GL headers + N detail records)")
     p.add_argument("--num-txns", type=int, default=100)
     p.add_argument("--date", default=datetime.now().strftime("%Y%m%d"))
-    p.add_argument("--network", choices=["VISA", "MC", "BOTH"], default="VISA")
+    p.add_argument("--network", choices=["VISA", "MC", "NFS", "RUPAY", "BOTH"], default="VISA")
     p.add_argument("--testcase", default="random",
                    choices=["random", "acquiring", "issuing", "chargebacks",
                             "recon_break", "high_value", "on_us", "atm_mix"])

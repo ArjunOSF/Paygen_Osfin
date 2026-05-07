@@ -461,7 +461,7 @@ def main(argv=None) -> int:
     p.add_argument("--currency", default="INR")
     p.add_argument("--testcase", default="random",
                    choices=["random", "acquiring", "issuing", "chargebacks",
-                            "recon_break", "high_value", "on_us"])
+                            "recon_break", "high_value", "on_us", "atm_mix"])
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--random", action="store_true")
     p.add_argument("--validate", action="store_true", default=True)

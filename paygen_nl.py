@@ -356,7 +356,7 @@ _SCRIPT_FLAGS = {
     "fss_gl_out_generator.py": {"--num-txns","--date","--testcase","--seed","--output","--network","--random"},
     # ── NFS ──
     "fig_b2c_generator.py":      {"--num-txns","--date","--seed","--output","--validate","--random"},
-    "ntsl_generator.py":         {"--num-txns","--date","--seed","--output","--bank-name","--random"},
+    "ntsl_generator.py":         {"--date","--seed","--output","--bank-name","--random"},
     "nfs_adjustment_generator.py": {"--num-txns","--date","--seed","--output","--random"},
     "verifireversal_generator.py": {"--num-txns","--date","--seed","--output","--random"},
     # ── RuPay ──
@@ -702,7 +702,13 @@ def run_plan(plan: List[Tuple[str, List[str], str]], dry_run: bool = False,
         print(f"         $ {' '.join(shlex.quote(c) for c in cmd)}")
         if dry_run:
             continue
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # Run from project root so legacy generators (mc_t112, mc_t140, mc_t464,
+        # mci_ar) can `from data_generator import Transaction`. Standalone gens
+        # are unaffected.
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(GEN_DIR.parent) + os.pathsep + env.get("PYTHONPATH", "")
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                cwd=str(GEN_DIR.parent), env=env)
         if result.returncode != 0:
             rc = 1
             print(f"         FAILED:\n{result.stderr}")
