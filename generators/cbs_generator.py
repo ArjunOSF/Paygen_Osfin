@@ -194,11 +194,13 @@ def _make_txn(idx: int, case: str, business_date: str, network: str,
 # ---------------------------------------------------------------------------
 
 def format_record(t: CbsTxn) -> str:
+    # Visa: emit full unmasked PAN. Other networks: keep masking behaviour.
+    pan_field = t.pan if t.network == "VISA" else _mask_pan(t.pan)
     return "|".join([
         t.transaction_code,
         _amount_rupees(t.amount_paise),
         t.dr_cr,
-        _mask_pan(t.pan),
+        pan_field,
         t.rrn,
         t.stan,
         t.date_ddmmyyyy,
@@ -251,7 +253,8 @@ def write_outputs(txns: List[CbsTxn], records: List[str], out_path: str,
                     "rrn", "stan", "date", "time", "tran_type", "source",
                     "sequence", "issuer_flag", "network", "test_case"])
         for t in txns:
-            w.writerow([t.transaction_code, t.amount_paise, t.dr_cr, _mask_pan(t.pan),
+            w.writerow([t.transaction_code, t.amount_paise, t.dr_cr,
+                        t.pan if t.network == "VISA" else _mask_pan(t.pan),
                         t.rrn, t.stan, t.date_ddmmyyyy, t.time_hhmmss,
                         t.tran_type, t.source, t.sequence, t.issuer_flag,
                         t.network, t.test_case])
