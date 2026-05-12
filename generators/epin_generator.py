@@ -386,11 +386,29 @@ def generate(num_txns: int, business_date: str,
             t.purchase_date = new_date.strftime("%m%d")
             t.reversal_offset_days = reversal_offset_days
 
-    # Build records
+    # Build records.
+    # Real-file layout: transaction records FIRST; 9100 batch markers scattered
+    # throughout (50 of them, 1 per ~700 lines); single 9200 trailer last.
+    # The "header bundle" at the top is incorrect — real EPIN starts with TC05.
+    # Placement: emit all txns, then interleave 9100 markers across the body, then 9200.
     records: List[str] = []
-    records.extend(build_header_records(num_txns, member_id, business_date))
     for t in txns:
         records.extend(build_records_for_txn(t))
+
+    # Scatter 50 × TC91 batch markers evenly through the txn body
+    headers = build_header_records(num_txns, member_id, business_date)
+    if records and headers:
+        step = max(1, len(records) // (len(headers) + 1))
+        out: List[str] = []
+        h_iter = iter(headers)
+        for i, r in enumerate(records):
+            out.append(r)
+            if (i + 1) % step == 0:
+                try: out.append(next(h_iter))
+                except StopIteration: pass
+        # append any leftover headers just before trailer
+        out.extend(h_iter)
+        records = out
 
     total_paise = sum(t.amount_paise for t in txns)
     records.append(build_trailer(len(records), total_paise, member_id, business_date))
