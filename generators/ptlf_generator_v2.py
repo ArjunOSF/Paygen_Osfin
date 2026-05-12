@@ -486,11 +486,13 @@ def write_outputs(txns: List[Txn], records: List[str], out_path: str,
     """Write .txt + _master_table.csv + _expected_totals.json"""
     base, _ = os.path.splitext(out_path)
 
-    # Main file
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(build_header(business_date) + "\n")
+    # Main file — real PTLF uses CRLF line endings. Injection systems do strict
+    # byte-position parsing and reject LF-only files. Binary mode bypasses Python's
+    # newline translation so '\r\n' is written verbatim.
+    with open(out_path, "wb") as f:
+        f.write((build_header(business_date) + "\r\n").encode("utf-8"))
         for r in records:
-            f.write(r + "\n")
+            f.write((r + "\r\n").encode("utf-8"))
 
     # Master table
     with open(base + "_master_table.csv", "w", newline="", encoding="utf-8") as f:

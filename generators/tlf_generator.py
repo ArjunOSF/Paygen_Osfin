@@ -412,10 +412,12 @@ def generate(num_txns: int, business_date: str,
 def write_outputs(txns: List[Txn], lines: List[str], out_path: str,
                   business_date: str, currency: str) -> None:
     base, _ = os.path.splitext(out_path)
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(build_header(business_date) + "\n")
+    # Real TLF uses CRLF line endings. Binary mode preserves '\r\n' exactly so
+    # the injection board's strict byte-position parser accepts the file.
+    with open(out_path, "wb") as f:
+        f.write((build_header(business_date) + "\r\n").encode("utf-8"))
         for l in lines:
-            f.write(l + "\n")
+            f.write((l + "\r\n").encode("utf-8"))
 
     with open(base + "_master_table.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
