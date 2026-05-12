@@ -104,6 +104,7 @@ class Txn:
     bin_acquirer: str = "00099900" # [3:11] Acquirer BIN — 8 chars
     tran_time_hhmmss: str = "000000"  # [46:52]
     merchant_zip: str = "000000"      # [124:130]
+    tran_date_yymmdd: str = "260101"  # [40:46] — full YYMMDD
     # PROMPT 7 FIX: original-txn linking + reversal date offset
     original_arn: str = ""        # for TC25/TC27 — links to original TC05/TC07
     original_date: str = ""       # for reversals — MMDD of original txn
@@ -178,19 +179,12 @@ def _apply_tcr0(template_key: str, t: Txn) -> str:
     put(0,   tc,                  2)
     put(2,   "0",                 1)                       # TCR
     put(3,   t.bin_acquirer,      8)
-    putr(11, t.pan,               17)
-    putr(28, t.amount_paise,      12)                      # AMT_1 — zero-padded paise
-    # Replace right-pad spaces with '0' for amount field
-    for i in range(28, 40):
-        if buf[i] == " ":
-            buf[i] = "0"
-    # Date YYMMDD — derive from purchase_date (MMDD) + business year (yy from arn)
-    yy = (t.original_date or t.purchase_date)[:0]   # placeholder
-    # Reconstruct YYMMDD: arn carries YDDD; safer to take from t.purchase_date which is MMDD
-    yymmdd = (t.arn[7:9] if len(t.arn) >= 9 else "26") + t.purchase_date[:4]
-    # Above only gives 6 chars if purchase_date is MMDD (4); pad if shorter
-    yymmdd = (yymmdd + "000000")[:6]
-    put(40, yymmdd,               6)
+    # PAN: strip any trailing space-padding before right-justifying into 17 chars
+    pan_clean = str(t.pan).strip()
+    put(11,  pan_clean.rjust(17),  17)
+    # AMT_1: zero-pad paise into 12 chars (no spaces)
+    put(28,  str(t.amount_paise).zfill(12), 12)
+    put(40,  t.tran_date_yymmdd[:6].ljust(6), 6)
     put(46, t.tran_time_hhmmss,   6)
     put(52, t.stan,               12)
     put(64, t.arn[-12:],          12)                      # RRN — last 12 of ARN
@@ -348,7 +342,7 @@ def _make_txn(idx: int, case: str, business_date: str, currency: str,
         currency=currency, tc_kind=tc_kind, is_reversal=is_rev,
         has_chip=has_chip, has_supplemental=has_supp, test_case=case,
         resp_code=resp, stan=stan, tran_time_hhmmss=time_hhmmss,
-        merchant_zip=zip_code,
+        merchant_zip=zip_code, tran_date_yymmdd=business_date[2:],
     )
 
 
