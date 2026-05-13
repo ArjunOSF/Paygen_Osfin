@@ -358,6 +358,68 @@ def write_files(master, iss_lines, acq_lines, business_date: str,
 
 
 # ---------------------------------------------------------------------------
+# VerifReversal xls — Table 6 (NFS-OSG p.62) + Annexure N
+# Late reversals received after cutoff, settled on next day.
+# Emit for CBS=1 + NPCI in {0, NULL} cases (refunds GL→CASA), and CBS=NULL +
+# NPCI in {0, NULL} recovery cases — these are the "verification reversal" rows.
+# ---------------------------------------------------------------------------
+
+VERIF_REV_COLUMNS = [
+    "TransType", "Resp_Code", "CardNo", "RRN", "StanNo",
+    "ACQ", "ISS", "Tran_Date", "Trans_Time", "ATMId",
+    "SettleDate", "RequestAmt", "ReceivedAmt", "Status",
+]
+
+def _is_verifreversal_case(case_num: int) -> bool:
+    """Cases where a late reversal arrives = CBS=1 with NPCI not Success."""
+    return case_num in {2, 3, 5, 6, 8, 9}
+
+
+def write_verifreversal(master, business_date: str, participant_id: str,
+                        out_dir: str) -> Optional[str]:
+    rows = [r for r in master if _is_verifreversal_case(r["case_num"])]
+    if not rows:
+        return None
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        return None
+    from datetime import timedelta
+    next_dt = datetime.strptime(business_date, "%Y%m%d") + timedelta(days=1)
+    settle_ddmmyyyy = next_dt.strftime("%d-%m-%Y")
+    txn_ddmmyyyy = datetime.strptime(business_date, "%Y%m%d").strftime("%d-%m-%Y")
+
+    wb = Workbook(); ws = wb.active; ws.title = "VerifReversal"
+    ws.append(VERIF_REV_COLUMNS)
+    rng = random.Random(int(business_date) + 99)
+    for r in rows:
+        pan = str(r["pan"])
+        pan_masked = pan[:6] + "*******" + pan[-3:]
+        hh = rng.randint(0,23); mm = rng.randint(0,59); ss = rng.randint(0,59)
+        resp = rng.choice(["28", "50"])  # late reversal codes
+        ws.append([
+            "04",                                       # TransType
+            f"'{resp}",                                  # Resp_Code (text)
+            f"'{pan_masked}",                            # CardNo
+            r["rrn"],                                    # RRN
+            str(rng.randint(10**7, 10**8 - 1)),          # StanNo (8 digits)
+            rng.choice(["SBI","HDF","UOB","PNB","BOB"]), # ACQ
+            participant_id,                              # ISS = IDF
+            txn_ddmmyyyy,                                # Tran_Date
+            f"{hh:02d}:{mm:02d}:{ss:02d}",               # Trans_Time
+            r["atm_id"],                                 # ATMId
+            settle_ddmmyyyy,                             # SettleDate (next day)
+            r["amount_paise"] / 100,                     # RequestAmt
+            0,                                           # ReceivedAmt (reversed = net 0)
+            "Processed late reversal and reversed originally settled transaction",
+        ])
+    ddmmyy = _ddmmyy(business_date)
+    out_path = os.path.join(out_dir, f"VerifReversalTrans{participant_id}{ddmmyy}.xls")
+    wb.save(out_path)
+    return out_path
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -432,9 +494,13 @@ def main(argv=None) -> int:
         master, iss, acq = generate_day(day_bdate, args.txns_per_case, args.role,
                                          seed=day_seed, participant_id=pid)
         paths = write_files(master, iss, acq, day_bdate, pid, args.output_dir, args.role)
+        # Emit VerifReversal xls for late-reversal cases (Table 6 + Annexure N)
+        vr = write_verifreversal(master, day_bdate, pid, args.output_dir)
+        if vr:
+            paths["verif_reversal"] = vr
         print(f"  day {d+1}/{args.days}  {day_bdate} ({_ddmmyy(day_bdate)}) — {len(master)} txns, {sum(1 for r in master if r['npci_status'] != '')} emitted")
         for k, v in paths.items():
-            print(f"    {k:>12}: {v}")
+            print(f"    {k:>14}: {v}")
         if args.zip:
             ddmmyy = _ddmmyy(day_bdate)
             zp = os.path.join(args.output_dir, f"NFSRawdata{pid}{ddmmyy}.zip")
