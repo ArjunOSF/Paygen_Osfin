@@ -369,7 +369,9 @@ _SCRIPT_FLAGS = {
     "fss_gl_out_generator.py": {"--num-txns","--date","--testcase","--seed","--output","--network","--random"},
     # ── NFS ──
     "fig_b2c_generator.py":      {"--num-txns","--date","--seed","--output","--validate","--random"},
-    "issrpidf_generator.py":     {"--num-txns","--date","--seed","--output","--mcc"},
+    "issrpidf_generator.py":     {"--num-txns","--date","--seed","--output","--mcc",
+                                  "--role","--txns-per-case","--participant-id",
+                                  "--output-dir","--zip","--days"},
     "upi_switch_generator.py":   {"--num-txns","--date","--seed","--output"},
     "ntsl_generator.py":         {"--date","--seed","--output","--bank-name","--random"},
     "nfs_adjustment_generator.py": {"--num-txns","--date","--seed","--output","--random"},
@@ -650,6 +652,22 @@ def resolve_files(cfg: ParsedConfig) -> List[Tuple[str, List[str], str]]:
             stem = script.replace("_generator", "").replace("_v2", "").replace(".py", "")
             out_path = f"out_{date}/{stem}_{net.lower()}.{ext}"
             args = list(common_args) + list(extra) + ["--output", out_path]
+            # NFS ISSRPIDF: upgrade to NPCI-spec 18-case matrix mode (407/274-char
+            # records + NPCI naming + auto VerifReversal). Map num_txns → txns-per-case.
+            if net == "NFS" and script == "issrpidf_generator.py":
+                tpc = max(1, count // 18)
+                role_arg = "issuer" if role == "ISSUING" else "acquirer" if role == "ACQUIRING" else "both"
+                # Strip the legacy --output and use --output-dir so generator emits
+                # 250ISSuerIDF{DDMMYY}.mIDF / 250ACQuirerIDF{DDMMYY}.mIDF / VerifReversal.xls
+                args = [a for a in args if a != "--output" and not a.startswith("out_")]
+                # Remove leftover orphan path
+                if "--output" in args:
+                    i = args.index("--output"); args = args[:i] + args[i+2:]
+                args += ["--role", role_arg,
+                          "--txns-per-case", str(tpc),
+                          "--participant-id", "IDF",
+                          "--output-dir", f"out_{date}",
+                          "--zip"]
             _add(script, args, label)
 
     # ── NFS conditional adds: dispute → Adjustment, late reversal → VeriFireversal ──
