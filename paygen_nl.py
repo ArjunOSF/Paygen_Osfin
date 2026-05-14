@@ -372,6 +372,8 @@ _SCRIPT_FLAGS = {
     "issrpidf_generator.py":     {"--num-txns","--date","--seed","--output","--mcc",
                                   "--role","--txns-per-case","--participant-id",
                                   "--output-dir","--zip","--days"},
+    "nfs_orchestrator.py":       {"--num-txns","--date","--seed","--role","--mcc",
+                                  "--participant-id","--output-dir","--no-zip"},
     "upi_switch_generator.py":   {"--num-txns","--date","--seed","--output"},
     "ntsl_generator.py":         {"--date","--seed","--output","--bank-name","--random"},
     "nfs_adjustment_generator.py": {"--num-txns","--date","--seed","--output","--random"},
@@ -479,13 +481,10 @@ ROUTING_TABLE = {
         ("ep747_generator.py",       [],                            "EP747 (VSS bundle)",     "txt"),
     ],
 
-    # ───── NFS Issuer recon (MCC 6011 / 6012) ─────
+    # ───── NFS Issuer recon (MCC 6011 / 6012) — single orchestrator call
+    #       so RRN + amount + date match across ISSRPIDF/TLF/CBS/FSS GL OUT.
     ("NFS", None, None): [
-        ("issrpidf_generator.py",    ["--mcc", "6011"],             "ISSRPIDF (NPCI MCC 6011)","txt"),
-        ("tlf_generator.py",         [],                            "TLF (NFS switch — PRO2)","txt"),
-        ("cbs_generator.py",         ["--network", "NFS"],          "CBS (NFS)",              "txt"),
-        ("fss_gl_out_generator.py",  ["--network", "NFS"],          "FSS GL OUT (NFS)",       "txt"),
-        ("ntsl_generator.py",        [],                            "NTSL Daily Settlement",  "xlsx"),
+        ("nfs_orchestrator.py",      [],                            "NFS recon set (orchestrated)", "txt"),
     ],
     # ───── NFS ICCW Issuer recon (MCC 6013 — dual RRN, NO TLF) ─────
     ("NFS", None, "ICCW"): [
@@ -565,7 +564,9 @@ def _validate_plan(plan, cfg, per_net):
         assert "fss_gl_out_generator.py" in all_scripts, "MC/Visa routes must include FSS GL OUT"
         assert "cbs_generator.py"        in all_scripts, "All routes must include CBS"
     if "NFS" in cfg.networks:
-        assert "issrpidf_generator.py"   in all_scripts, "NFS must include ISSRPIDF (NPCI raw)"
+        assert ("issrpidf_generator.py" in all_scripts
+                or "nfs_orchestrator.py" in all_scripts), \
+                "NFS must include ISSRPIDF (NPCI raw) via direct generator or orchestrator"
         assert "mc_t112_generator.py"    not in all_scripts, "NFS must NOT include T112"
         assert "epin_generator.py"       not in all_scripts, "NFS must NOT include EPIN"
     if "RUPAY" in cfg.networks:
@@ -649,25 +650,18 @@ def resolve_files(cfg: ParsedConfig) -> List[Tuple[str, List[str], str]]:
                        "--currency", cfg.currency, "--testcase", testcase,
                        "--seed", seed]
         for script, extra, label, ext in recipe:
+            # NFS orchestrator path: one script emits all files with shared RRN/amount/date
+            if net == "NFS" and script == "nfs_orchestrator.py":
+                role_arg = "issuer" if role == "ISSUING" else "acquirer"
+                args = ["--num-txns", str(count), "--date", date, "--seed", seed,
+                         "--role", role_arg, "--participant-id", "IDF",
+                         "--output-dir", f"out_{date}", "--no-zip"]
+                args += list(extra)
+                _add(script, args, label)
+                continue
             stem = script.replace("_generator", "").replace("_v2", "").replace(".py", "")
             out_path = f"out_{date}/{stem}_{net.lower()}.{ext}"
             args = list(common_args) + list(extra) + ["--output", out_path]
-            # NFS ISSRPIDF: upgrade to NPCI-spec 18-case matrix mode (407/274-char
-            # records + NPCI naming + auto VerifReversal). Map num_txns → txns-per-case.
-            if net == "NFS" and script == "issrpidf_generator.py":
-                tpc = max(1, count // 18)
-                role_arg = "issuer" if role == "ISSUING" else "acquirer" if role == "ACQUIRING" else "both"
-                # Strip the legacy --output and use --output-dir so generator emits
-                # 250ISSuerIDF{DDMMYY}.mIDF / 250ACQuirerIDF{DDMMYY}.mIDF / VerifReversal.xls
-                args = [a for a in args if a != "--output" and not a.startswith("out_")]
-                # Remove leftover orphan path
-                if "--output" in args:
-                    i = args.index("--output"); args = args[:i] + args[i+2:]
-                args += ["--role", role_arg,
-                          "--txns-per-case", str(tpc),
-                          "--participant-id", "IDF",
-                          "--output-dir", f"out_{date}",
-                          "--zip"]
             _add(script, args, label)
 
     # ── NFS conditional adds: dispute → Adjustment, late reversal → VeriFireversal ──
@@ -766,12 +760,16 @@ def run_plan(plan: List[Tuple[str, List[str], str]], dry_run: bool = False,
             print(f"  [skip] {label} — generator not found: {path.name}")
             continue
         cmd = [sys.executable, str(path)] + args
-        # Ensure output dir exists + track it for zipping
+        # Ensure output dir exists + track it for zipping (--output or --output-dir)
         for i, a in enumerate(args):
             if a == "--output" and i + 1 < len(args):
                 p = Path(args[i + 1])
                 p.parent.mkdir(parents=True, exist_ok=True)
                 out_dirs.add(p.parent.resolve())
+            elif a == "--output-dir" and i + 1 < len(args):
+                p = Path(args[i + 1])
+                p.mkdir(parents=True, exist_ok=True)
+                out_dirs.add(p.resolve())
         print(f"  [run]  {label}")
         print(f"         $ {' '.join(shlex.quote(c) for c in cmd)}")
         if dry_run:
